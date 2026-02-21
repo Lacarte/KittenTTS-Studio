@@ -788,6 +788,12 @@ def generate():
     if voice not in VOICES:
         return jsonify({"error": f"Unknown voice. Choose from: {VOICES}"}), 400
 
+    # Reject if another generation is already running (prevents OOM from concurrent ONNX)
+    with generation_jobs_lock:
+        for job in generation_jobs.values():
+            if job.get("status") == "running":
+                return jsonify({"error": "A generation is already in progress. Please wait or abort."}), 429
+
     m = load_model(model_id)
 
     tts_prompt = clean_for_tts(prompt)
@@ -825,7 +831,8 @@ def generate():
 
     start = time.perf_counter()
     try:
-        audio = m.generate(tts_prompt, voice=voice, speed=speed)
+        with generation_inference_lock:
+            audio = m.generate(tts_prompt, voice=voice, speed=speed)
     except Exception as e:
         print(f"[generate] TTS inference failed: {e}")
         return jsonify({"error": f"Generation failed: {e}"}), 500

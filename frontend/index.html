@@ -385,6 +385,31 @@
       background: linear-gradient(135deg, #4ECDC4 0%, #2FB8AE 100%) !important;
     }
 
+    .abort-btn {
+      border: 1px solid rgba(255,107,107,0.3);
+      background: rgba(255,107,107,0.08);
+      color: var(--coral);
+      font-weight: 600;
+      font-size: 13px;
+      padding: 12px 20px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: 'DM Sans', system-ui, sans-serif;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .abort-btn:hover {
+      background: rgba(255,107,107,0.15);
+      border-color: rgba(255,107,107,0.5);
+    }
+    .abort-btn:active {
+      transform: scale(0.97);
+    }
+
     /* ---- Progress ---- */
     .dl-progress-track {
       height: 5px;
@@ -1153,16 +1178,22 @@
           </div>
         </div>
 
-        <!-- Generate Button -->
-        <button id="generate-btn" class="gen-btn reveal" style="animation-delay:0.14s" onclick="handleGenerate()">
-          <span id="gen-label">Generate Audio</span>
-          <svg id="gen-spinner" class="hidden"
-            style="display:none;width:18px;height:18px;margin-left:8px;vertical-align:middle;animation:spin 0.8s linear infinite"
-            fill="none" viewBox="0 0 24 24">
-            <circle style="opacity:0.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-            <path style="opacity:0.8" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-        </button>
+        <!-- Generate + Abort Buttons -->
+        <div style="display:flex;gap:10px;align-items:stretch">
+          <button id="generate-btn" class="gen-btn reveal" style="animation-delay:0.14s;flex:1" onclick="handleGenerate()">
+            <span id="gen-label">Generate Audio</span>
+            <svg id="gen-spinner" class="hidden"
+              style="display:none;width:18px;height:18px;margin-left:8px;vertical-align:middle;animation:spin 0.8s linear infinite"
+              fill="none" viewBox="0 0 24 24">
+              <circle style="opacity:0.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+              <path style="opacity:0.8" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          </button>
+          <button id="abort-btn" class="abort-btn" onclick="abortGeneration()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Abort
+          </button>
+        </div>
 
       </div>
     </div><!-- /page-generate -->
@@ -1413,7 +1444,7 @@
       selectedVoice: localStorage.getItem('kittenTTS-voice') || 'Jasper',
       nowPlaying: null, isGenerating: false, history: [],
       dark: true, // Always dark in this design
-      downloadEventSource: null, eqInterval: null, ffmpeg: false,
+      downloadEventSource: null, chunkEventSource: null, generateAbort: null, eqInterval: null, ffmpeg: false,
       alignment: null, alignmentAvailable: false, alignmentPollTimer: null, activeWordIndex: -1,
       enhanceAvailable: false, enhancePollTimer: null,
       vadAvailable: false, vadPollTimer: null,
@@ -1720,12 +1751,21 @@
       STATE.isGenerating = on;
       const btn = $('#generate-btn');
       btn.disabled = on;
+      $('#abort-btn').style.display = on ? 'flex' : 'none';
       if (!on && STATE.processingStep === 0) {
         $('#gen-label').textContent = 'Generate Audio';
         btn.classList.remove('step-enhance', 'step-vad', 'step-loudnorm', 'step-mp3', 'step-done');
       }
       const sp = $('#gen-spinner');
       if (!on && STATE.processingStep === 0) { sp.style.display = 'none'; sp.classList.add('hidden'); }
+    }
+
+    function abortGeneration() {
+      if (STATE.chunkEventSource) { STATE.chunkEventSource.close(); STATE.chunkEventSource = null; }
+      if (STATE.generateAbort) { STATE.generateAbort.abort(); STATE.generateAbort = null; }
+      if (STATE.downloadEventSource) { STATE.downloadEventSource.close(); STATE.downloadEventSource = null; hideDownloadModal(); }
+      hideChunkProgress(); hideStepper(); setGenerating(false);
+      toast('Generation aborted', 'info');
     }
 
     // --- Chunked generation ---
@@ -1740,15 +1780,16 @@
     function streamChunkedGeneration(jobId, totalChunks) {
       return new Promise((resolve, reject) => {
         const es = new EventSource(`/api/generate-progress/${jobId}`);
+        STATE.chunkEventSource = es;
         es.onmessage = (ev) => {
           let d; try { d = JSON.parse(ev.data); } catch { return; }
           if (d.phase === 'generating') { $('#gen-label').textContent = `Generating ${d.chunk}/${d.total}...`; updateChunkProgress(d.chunk, d.total, d.sentence); }
           else if (d.phase === 'concatenating') { $('#gen-label').textContent = 'Joining chunks...'; }
           else if (d.phase === 'normalizing') { $('#gen-label').textContent = 'Normalizing audio...'; }
-          else if (d.phase === 'done') { es.close(); hideChunkProgress(); resolve(d.metadata); }
-          else if (d.phase === 'error') { es.close(); hideChunkProgress(); reject(new Error(d.message || 'Chunked generation failed')); }
+          else if (d.phase === 'done') { es.close(); STATE.chunkEventSource = null; hideChunkProgress(); resolve(d.metadata); }
+          else if (d.phase === 'error') { es.close(); STATE.chunkEventSource = null; hideChunkProgress(); reject(new Error(d.message || 'Chunked generation failed')); }
         };
-        es.onerror = () => { es.close(); hideChunkProgress(); reject(new Error('Generation connection lost')); };
+        es.onerror = () => { es.close(); STATE.chunkEventSource = null; hideChunkProgress(); reject(new Error('Generation connection lost')); };
       });
     }
 
@@ -1756,14 +1797,16 @@
       const prompt = $('#prompt-input').value.trim();
       if (!prompt) { toast('Enter a prompt first', 'error'); return; }
       if (STATE.isGenerating) return;
+      const abort = new AbortController();
+      STATE.generateAbort = abort;
       setGenerating(true);
       showStepper(); setStepActive(1);
       try {
         try {
-          const fmt = await api('/api/normalize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: prompt }) });
+          const fmt = await api('/api/normalize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: prompt }), signal: abort.signal });
           if (fmt.normalized && fmt.normalized !== prompt) { $('#prompt-input').value = fmt.normalized; updateCounts(); localStorage.setItem('kittenTTS-prompt', fmt.normalized); }
-        } catch (_) { }
-        const status = await api(`/api/model-status/${STATE.selectedModel}`);
+        } catch (_) { if (abort.signal.aborted) throw new DOMException('Aborted', 'AbortError'); }
+        const status = await api(`/api/model-status/${STATE.selectedModel}`, { signal: abort.signal });
         if (!status.cached) await downloadModel(STATE.selectedModel);
         const speed = parseFloat($('#speed-select').value) || 1.0;
         const max_silence_ms = parseInt($('#silence-select').value) || 500;
@@ -1771,18 +1814,21 @@
         const genResult = await api('/api/generate', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: STATE.selectedModel, voice: STATE.selectedVoice, prompt: finalPrompt, speed, max_silence_ms }),
+          signal: abort.signal,
         });
         let result;
         if (genResult.job_id) { result = await streamChunkedGeneration(genResult.job_id, genResult.total_chunks); }
         else { result = genResult; }
         toast(`Generated in ${result.inference_time}s (RTF ${result.rtf})`);
         playAudio(result); await loadHistory();
+        STATE.generateAbort = null;
         STATE.isGenerating = false; $('#generate-btn').disabled = false;
+        $('#abort-btn').style.display = 'none';
         if (STATE.enhanceAvailable) { setStepActive(2); await pollUntilDone(`/api/audio/${result.filename}/enhance-status`, 'ready', 'enhancing', 1500); }
         if (STATE.vadAvailable) { setStepActive(3); await pollUntilDone(`/api/audio/${result.filename}/vad-status`, 'ready', 'cleaning', 1500, (data) => { if (data.status === 'normalizing' && STATE.processingStep === 3) setStepActive(4); }); }
         if (STATE.ffmpeg && STATE.nowPlaying && STATE.nowPlaying._cleanedFilename) { setStepActive(5); await autoConvertMp3(STATE.nowPlaying._cleanedFilename); STATE.nowPlaying._cleanedMp3 = true; updateCleanedMp3Btn(); }
         setStepDone(); pollVersionStatuses(result.filename); await loadHistory();
-      } catch (e) { toast(e.message || 'Generation failed', 'error'); hideStepper(); setGenerating(false); }
+      } catch (e) { if (e.name === 'AbortError') return; toast(e.message || 'Generation failed', 'error'); hideStepper(); setGenerating(false); }
     }
 
     function pollUntilDone(url, doneStatus, pendingStatus, interval, onProgress) {
