@@ -1,28 +1,12 @@
-# KittenTTS Studio — Project Status & Session Log
+# KittenVox — Project Status & Session Log
+
+**Repository:** https://github.com/Lacarte/Lacarte-KittenVox
+**Branch:** main
 
 ## Current State (2026-02-21)
 
-### Uncommitted Changes (3 files, +286/-16)
-These changes are staged but **not yet committed**:
-
-1. **TTS Text Normalization** (`backend.py` + `frontend/index.html`)
-   - Full `normalize_for_tts()` pipeline: symbols → contractions → abbreviations → currency → units → dates → time → ordinals → numbers (via `num2words`)
-   - `POST /api/normalize` endpoint
-   - "Format" button next to word/token count in prompt area — calls API, replaces text in-place
-   - `num2words` added to `requirements.txt`
-
-2. **Loudnorm Audio Normalization** (`backend.py` + `frontend/index.html`)
-   - `_run_loudnorm(wav_path)` — runs `ffmpeg -nostdin -y -i input -af loudnorm output` in-place
-   - Integrated into `_background_vad()` as a sub-step after silence removal (status: `cleaning` → `normalizing` → `ready`)
-   - 5-step stepper: Generating → Enhancing → Removing Silence → **Normalizing** → Converting MP3
-   - Orange gradient `step-loudnorm` button color for step 4
-   - `pollUntilDone` accepts `onProgress` callback to advance stepper on intermediate status
-
-3. **Bug Fixes**
-   - `_background_vad` `except` block now updates metadata to `"failed"` (was leaving `"normalizing"` forever)
-   - `-nostdin` flag on ffmpeg to prevent hanging on Windows
-   - `.catch(() => {})` on all 4 `audioEl.play()` calls to suppress AbortError console spam
-   - `vad-status` endpoint handles `"normalizing"` as valid intermediate status
+### Latest Commit
+- `1794108` — `feat: initial KittenTTS Web Studio application` (10 files, 4,541 lines)
 
 ---
 
@@ -79,6 +63,7 @@ audio/
 | `1ea0952` | LavaSR audio enhancement, speed control (0.5x–2.0x), UI polish |
 | `b29bece` | Silero VAD silence removal, 4-step stepper, version selector, clean_for_tts, silence threshold (0.2s–1.0s) |
 | `cdaeee5` | Soft-delete with TRASH folder, delete-all history button |
+| `1794108` | Initial commit on new repo (Lacarte-KittenVox) — full app with all features above |
 
 ---
 
@@ -172,7 +157,8 @@ Implicit: torch, numpy, soundfile, huggingface-hub, onnxruntime, spacy (pulled b
 ---
 
 ## Known Issues / TODO
-- [ ] Commit pending changes (normalize + loudnorm + bug fixes)
+- [x] ~~Commit pending changes (normalize + loudnorm + bug fixes)~~ — included in initial commit
+- [x] ~~Project renamed to **KittenVox**, pushed to GitHub~~
 - [ ] Long text chunking: split by sentence for better prosody on long prompts
 - [ ] Batch generation queue for automation pipelines
 - [ ] Waveform visualization during playback
