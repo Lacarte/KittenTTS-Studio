@@ -418,6 +418,12 @@ def split_into_sentences(text: str, max_len: int = MAX_SENTENCE_LEN) -> list[str
     return [_ensure_punct(c) for c in chunks if c.strip()]
 
 
+def pad_audio(audio, sample_rate=24000, pad_ms=50):
+    """Prepend/append short silence to prevent clipping on hard consonants."""
+    pad = np.zeros(int(sample_rate * pad_ms / 1000), dtype=np.float32)
+    return np.concatenate([pad, audio, pad])
+
+
 def concatenate_chunks(chunks: list, sample_rate: int = 24000,
                        gap_ms: int = 80, crossfade_ms: int = 20) -> np.ndarray:
     """Concatenate audio chunks with silence gaps and crossfade.
@@ -736,6 +742,7 @@ def _background_chunked_generate(job_id, model_id, voice, sentences, speed,
         # Concatenate with crossfade and silence gaps
         q.put({"phase": "concatenating"})
         audio = concatenate_chunks(audio_chunks, sample_rate=24000, gap_ms=80, crossfade_ms=20)
+        audio = pad_audio(audio, sample_rate=24000)
 
         wav_path = os.path.join(AUDIO_DIR, basename + ".wav")
         sf.write(wav_path, audio, 24000)
@@ -878,6 +885,7 @@ def generate():
         return jsonify({"error": f"Generation failed: {e}"}), 500
     end = time.perf_counter()
 
+    audio = pad_audio(audio, sample_rate=24000)
     duration_generated = len(audio) / 24000
     inference_time = end - start
     rtf = inference_time / duration_generated
@@ -982,6 +990,33 @@ def delete_audio(filename):
     return jsonify({"error": "File not found"}), 404
 
 
+# --- Open audio folder in OS file manager (with file selected if provided) ---
+@app.route("/api/open-audio-folder", methods=["POST"])
+def open_audio_folder():
+    import sys
+    data = request.get_json(silent=True) or {}
+    filename = data.get("filename", "")
+    filename = os.path.basename(filename) if filename else ""
+    file_path = os.path.join(os.path.abspath(AUDIO_DIR), filename) if filename else ""
+    folder = os.path.abspath(AUDIO_DIR)
+    try:
+        if sys.platform == "win32":
+            if file_path and os.path.exists(file_path):
+                subprocess.Popen(["explorer", "/select,", file_path])
+            else:
+                os.startfile(folder)
+        elif sys.platform == "darwin":
+            if file_path and os.path.exists(file_path):
+                subprocess.Popen(["open", "-R", file_path])
+            else:
+                subprocess.Popen(["open", folder])
+        else:
+            subprocess.Popen(["xdg-open", folder])
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # --- Delete all audio files (move to TRASH) ---
 @app.route("/api/audio", methods=["DELETE"])
 def delete_all_audio():
@@ -1033,7 +1068,14 @@ def get_alignment(filename):
         with alignment_tasks_lock:
             if basename not in alignment_tasks:
                 _start_alignment(basename)
-        return jsonify({"status": "aligning"})
+        resp = {"status": "aligning"}
+        started = metadata.get("alignment_started_at")
+        duration = metadata.get("duration_seconds")
+        if started:
+            resp["elapsed"] = round(time.time() - started, 1)
+        if duration:
+            resp["audio_duration"] = duration
+        return jsonify(resp)
 
     # No alignment attempted yet (old file) — trigger retroactive alignment
     _start_alignment(basename)
@@ -1237,7 +1279,10 @@ def _background_align(basename):
                 and metadata.get("word_alignment")):
             return
 
-        _update_metadata(basename, {"alignment_status": "aligning"})
+        _update_metadata(basename, {
+            "alignment_status": "aligning",
+            "alignment_started_at": time.time(),
+        })
 
         prompt_text = metadata.get("prompt", "")
         if not prompt_text.strip():

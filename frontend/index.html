@@ -672,6 +672,15 @@
       animation: align-pop 0.4s ease-out;
     }
 
+    .align-status-badge {
+      color: #60A5FA;
+      animation: align-pulse 1.2s ease-in-out infinite;
+    }
+    .align-status-badge.failed {
+      color: var(--coral);
+      animation: none;
+    }
+
     /* ---- Version buttons ---- */
     .ver-btn[data-active="true"] {
       background: var(--bg-surface) !important;
@@ -1399,6 +1408,15 @@
             <path d="M20 21H4" />
           </svg>
         </button>
+        <button id="np-open-folder" onclick="openAudioFolder()" title="Open audio folder"
+          style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;transition:all 0.2s"
+          onmouseover="this.style.color='var(--accent)';this.style.background='rgba(78,205,196,0.08)'"
+          onmouseout="this.style.color='var(--text-muted)';this.style.background='transparent'">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            viewBox="0 0 24 24">
+            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
+          </svg>
+        </button>
         <button id="np-delete" onclick="deleteNowPlaying()" title="Delete"
           style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;transition:all 0.2s"
           onmouseover="this.style.color='var(--coral)';this.style.background='rgba(255,107,107,0.08)'"
@@ -1841,7 +1859,16 @@
         if (STATE.enhanceAvailable) { setStepActive(2); await pollUntilDone(`/api/audio/${result.filename}/enhance-status`, 'ready', 'enhancing', 1500); }
         if (STATE.vadAvailable) { setStepActive(3); await pollUntilDone(`/api/audio/${result.filename}/vad-status`, 'ready', 'cleaning', 1500, (data) => { if (data.status === 'normalizing' && STATE.processingStep === 3) setStepActive(4); }); }
         if (STATE.ffmpeg && STATE.nowPlaying && STATE.nowPlaying._cleanedFilename) { setStepActive(5); await autoConvertMp3(STATE.nowPlaying._cleanedFilename); STATE.nowPlaying._cleanedMp3 = true; updateCleanedMp3Btn(); }
-        if (STATE.alignmentAvailable) { setStepActive(6); await pollUntilDone(`/api/audio/${result.filename}/alignment`, 'ready', 'aligning', 2000); }
+        if (STATE.alignmentAvailable) { setStepActive(6); await pollUntilDone(`/api/audio/${result.filename}/alignment`, 'ready', 'aligning', 2000, (data) => {
+          if (data.elapsed != null) {
+            const el = Math.round(data.elapsed);
+            const mm = String(Math.floor(el / 60)).padStart(2, '0');
+            const ss = String(el % 60).padStart(2, '0');
+            let label = `Aligning… ${mm}:${ss}`;
+            if (data.audio_duration) { const pct = Math.min(95, Math.round((data.elapsed / (data.audio_duration * 1.5)) * 100)); label += ` (~${pct}%)`; }
+            $('#gen-label').textContent = label;
+          }
+        }); }
         setStepDone(); pollVersionStatuses(result.filename); await loadHistory();
       } catch (e) { if (e.name === 'AbortError') return; toast(e.message || 'Generation failed', 'error'); hideStepper(); setGenerating(false); }
     }
@@ -2099,6 +2126,11 @@
     function updateEnhanceBtn() { updateVersionBtns(); }
     function toggleEnhance() { switchAudioVersion(STATE.activeVersion === 'enhanced' ? 'original' : 'enhanced'); }
 
+    async function openAudioFolder() {
+      const filename = STATE.nowPlaying ? STATE.nowPlaying.filename : '';
+      try { await fetch('/api/open-audio-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) }); } catch (e) { toast('Could not open folder', 'error'); }
+    }
+
     async function deleteNowPlaying() {
       if (!STATE.nowPlaying) return;
       const prompt = STATE.nowPlaying.prompt;
@@ -2151,22 +2183,33 @@
         </button>
         <button onclick='playAudio(${jsonAttr})' style="flex:1;min-width:0;background:none;border:none;cursor:pointer;text-align:left;font-family:inherit;padding:0">
           <p style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0">${esc(h.prompt.length > 55 ? h.prompt.slice(0, 55) + '...' : h.prompt)}</p>
-          <p class="font-mono" style="font-size:10px;color:var(--text-muted);margin:2px 0 0">${esc(h.voice)} · ${h.duration_seconds}s · ${timeAgo(h.timestamp)}</p>
+          <p class="font-mono" style="font-size:10px;color:var(--text-muted);margin:2px 0 0">${esc(h.voice)} · ${h.duration_seconds}s · ${timeAgo(h.timestamp)}${h.alignment_status === 'aligning' ? ` · <span class="align-status-badge" data-align-started="${h.alignment_started_at || ''}">aligning…</span>` : h.alignment_status === 'failed' ? ' · <span class="align-status-badge failed">align failed</span>' : ''}</p>
         </button>
         <span class="font-mono" style="font-size:9px;color:var(--text-muted);flex-shrink:0;background:var(--bg-darkest);padding:2px 6px;border-radius:4px">${esc(h.model_id || '')}</span>
         <button onclick="toggleHistText(this)" title="View full text" style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;transition:all 0.2s;flex-shrink:0" onmouseover="this.style.color='var(--accent)';this.style.background='rgba(78,205,196,0.06)'" onmouseout="this.style.color='var(--text-muted)';this.style.background='transparent'">
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="8" y1="9" x2="10" y2="9"/></svg>
         </button>
-        ${STATE.alignmentAvailable ? `<button class="align-btn" onclick="triggerAlignment('${esc(h.filename)}')" title="${h.alignment_status === 'ready' ? 'Alignment ready' : 'Align words'}" style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:${h.alignment_status === 'ready' ? 'var(--accent)' : 'var(--text-muted)'};background:transparent;border:none;cursor:pointer;transition:all 0.2s;flex-shrink:0" onmouseover="this.style.background='rgba(78,205,196,0.06)'" onmouseout="this.style.background='transparent'">
-          <svg class="align-icon" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24"><line x1="4" y1="8" x2="4" y2="16"/><line x1="8" y1="5" x2="8" y2="19"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="16" y1="7" x2="16" y2="17"/><line x1="20" y1="10" x2="20" y2="14"/></svg>
-        </button>` : ''}
+        ${STATE.alignmentAvailable ? (() => {
+          const as = h.alignment_status || 'pending';
+          const isReady = as === 'ready';
+          const isAligning = as === 'aligning';
+          const isFailed = as === 'failed';
+          const btnCls = 'align-btn' + (isAligning ? ' is-loading' : '') + (isReady ? ' is-ready' : '');
+          const title = isReady ? 'Alignment ready — click for karaoke' : isAligning ? 'Aligning words…' : isFailed ? 'Alignment failed — click to retry' : 'Align words';
+          const color = isReady ? 'var(--accent)' : isFailed ? 'var(--coral)' : 'var(--text-muted)';
+          const waveSVG = '<svg class="align-icon" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24"><line x1="4" y1="8" x2="4" y2="16"/><line x1="8" y1="5" x2="8" y2="19"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="16" y1="7" x2="16" y2="17"/><line x1="20" y1="10" x2="20" y2="14"/></svg>';
+          const checkSVG = '<svg class="align-icon" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>';
+          const icon = isReady ? checkSVG : waveSVG;
+          return `<button class="${btnCls}" onclick="triggerAlignment('${esc(h.filename)}')" title="${title}" style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:${color};background:transparent;border:none;cursor:pointer;transition:all 0.2s;flex-shrink:0" onmouseover="this.style.background='rgba(78,205,196,0.06)'" onmouseout="this.style.background='transparent'">${icon}</button>`;
+        })() : ''}
       </div>
-      <div class="hist-text-expand" style="display:none;padding:0 14px 10px 56px">
+      <div class="hist-text-expand" style="display:none;padding:0 14px 10px 56px;max-height:200px;overflow-y:auto">
         <p class="hist-text-plain" style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin:0;white-space:pre-wrap;word-break:break-word">${esc(h.prompt)}</p>
         <div class="hist-karaoke" style="display:none;flex-wrap:wrap;gap:1px 1px;line-height:1.8"></div>
       </div>
     </div>`;
       }).join('');
+      if (STATE.history.some(h => h.alignment_status === 'aligning')) _startAlignBadgeTimer();
     }
     function toggleHistText(btn) {
       const expand = btn.closest('.hist-item').querySelector('.hist-text-expand');
@@ -2179,6 +2222,25 @@
       const d = (Date.now() - new Date(ts).getTime()) / 1000;
       if (d < 60) return 'just now'; if (d < 3600) return Math.floor(d / 60) + 'm ago';
       if (d < 86400) return Math.floor(d / 3600) + 'h ago'; return Math.floor(d / 86400) + 'd ago';
+    }
+
+    // Live elapsed timer for alignment badges in history
+    let _alignBadgeTimer = null;
+    function _startAlignBadgeTimer() {
+      if (_alignBadgeTimer) return;
+      _alignBadgeTimer = setInterval(() => {
+        const badges = $$('.align-status-badge[data-align-started]');
+        if (!badges.length) { clearInterval(_alignBadgeTimer); _alignBadgeTimer = null; return; }
+        const now = Date.now() / 1000;
+        badges.forEach(b => {
+          const started = parseFloat(b.dataset.alignStarted);
+          if (!started) return;
+          const el = Math.round(now - started);
+          const mm = String(Math.floor(el / 60)).padStart(2, '0');
+          const ss = String(el % 60).padStart(2, '0');
+          b.textContent = `aligning… ${mm}:${ss}`;
+        });
+      }, 1000);
     }
 
     // ======================================================================
