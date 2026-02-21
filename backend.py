@@ -64,7 +64,7 @@ MODELS = {
     },
 }
 
-VOICES = ["Bella", "Jasper", "Luna", "Bruno", "Rosie", "Hugo", "Kiki", "Leo"]
+VOICES = ["Rosie", "Hugo", "Bella", "Bruno", "Jasper", "Luna", "Kiki", "Leo"]
 
 # Cache of loaded KittenTTS model instances: {model_id: KittenTTS}
 loaded_models = {}
@@ -1552,6 +1552,16 @@ def _start_vad(basename, max_silence_ms=500):
         t = threading.Thread(target=_background_vad, args=(basename, max_silence_ms), daemon=True)
         vad_tasks[basename] = t
         t.start()
+
+
+# --- Check if MP3 exists (returns 200 always, avoids 404 console noise) ---
+@app.route("/api/audio/<filename>/mp3-check")
+def check_mp3(filename):
+    if not filename.endswith(".wav"):
+        return jsonify({"exists": False})
+    mp3_name = filename.rsplit(".", 1)[0] + ".mp3"
+    mp3_path = os.path.join(AUDIO_DIR, mp3_name)
+    return jsonify({"exists": os.path.exists(mp3_path)})
 
 
 # --- Serve cached MP3 ---

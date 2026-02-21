@@ -156,9 +156,45 @@ Implicit: torch, numpy, soundfile, huggingface-hub, onnxruntime, spacy (pulled b
 
 ---
 
+## Upcoming: Prosody (Expression) in Audio via Parselmouth
+
+**Status: NOT STARTED**
+
+KittenTTS generates flat, neutral speech. Post-generation expression manipulation (pitch, expressiveness, rate) via **Parselmouth** (Python wrapper for Praat) — lightweight (~10MB), no GPU, parametric slider controls, sub-100ms processing.
+
+### Pipeline Position
+```
+Generate (24kHz) → Expression (Parselmouth, in-place) → Loudnorm → Enhancement → VAD → MP3
+```
+Applied synchronously during generation (before WAV write). The expression-adjusted audio becomes the base file.
+
+### Changes Required
+
+**`requirements.txt`** — Add `parselmouth`
+
+**`backend.py`**:
+- Add `expression_available = None` global
+- Add `_check_expression_available()` — lazy import, cached result
+- Add `_run_expression(audio_np, sample_rate, pitch_shift, pitch_range, rate_factor)`:
+  - No-op fast path if all defaults (0, 1.0, 1.0)
+  - Parselmouth PSOLA: `To Manipulation` → pitch tier → `Multiply frequencies` → `Get resynthesis (overlap-add)`
+  - Duration tier for rate adjustment
+- Update `/api/health` — add `"expression": _check_expression_available()`
+- Update `/api/generate` — accept `pitch_shift` (-6 to +6), `pitch_range` (0.5 to 2.0), `rate_adjust` (0.8 to 1.3)
+- Integrate into single-sentence and chunked generation paths
+
+**`frontend/index.html`**:
+- Add `STATE.expressionAvailable`, set from health response
+- Settings page — "Expression" card with 3 sliders (Pitch Shift, Pitch Range, Rate Adjust)
+- Pass expression params in `handleGenerate()` request body
+- Show expression badge in history when non-default
+
+---
+
 ## Known Issues / TODO
 - [x] ~~Commit pending changes (normalize + loudnorm + bug fixes)~~ — included in initial commit
 - [x] ~~Project renamed to **KittenTTS-Studio**, pushed to GitHub~~
+- [ ] Prosody (Expression) in Audio — see section above
 - [ ] Long text chunking: split by sentence for better prosody on long prompts
 - [ ] Batch generation queue for automation pipelines
 - [ ] Waveform visualization during playback
