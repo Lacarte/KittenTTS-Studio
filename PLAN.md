@@ -1,6 +1,6 @@
-# KittenVox — Project Status & Session Log
+# KittenTTS-Studio — Project Status & Session Log
 
-**Repository:** https://github.com/Lacarte/Lacarte-KittenVox
+**Repository:** https://github.com/Lacarte/KittenTTS-Studio
 **Branch:** main
 
 ## Current State (2026-02-21)
@@ -63,7 +63,7 @@ audio/
 | `1ea0952` | LavaSR audio enhancement, speed control (0.5x–2.0x), UI polish |
 | `b29bece` | Silero VAD silence removal, 4-step stepper, version selector, clean_for_tts, silence threshold (0.2s–1.0s) |
 | `cdaeee5` | Soft-delete with TRASH folder, delete-all history button |
-| `1794108` | Initial commit on new repo (Lacarte-KittenVox) — full app with all features above |
+| `1794108` | Initial commit on new repo (KittenTTS-Studio) — full app with all features above |
 
 ---
 
@@ -158,7 +158,7 @@ Implicit: torch, numpy, soundfile, huggingface-hub, onnxruntime, spacy (pulled b
 
 ## Known Issues / TODO
 - [x] ~~Commit pending changes (normalize + loudnorm + bug fixes)~~ — included in initial commit
-- [x] ~~Project renamed to **KittenVox**, pushed to GitHub~~
+- [x] ~~Project renamed to **KittenTTS-Studio**, pushed to GitHub~~
 - [ ] Long text chunking: split by sentence for better prosody on long prompts
 - [ ] Batch generation queue for automation pipelines
 - [ ] Waveform visualization during playback

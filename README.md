@@ -1,4 +1,4 @@
-# KittenVox
+# KittenTTS-Studio
 
 A web studio for [KittenTTS](https://github.com/KittenML/KittenTTS) — ultra-lightweight open-source text-to-speech. Generate realistic speech from text in your browser, no GPU required.
 
@@ -86,7 +86,7 @@ User clicks Generate
 ## Project Structure
 
 ```
-KittenVox/
+KittenTTS-Studio/
 ├── main.py             # Original CLI script
 ├── backend.py          # Flask API server
 ├── requirements.txt    # Python dependencies
