@@ -1,0 +1,7 @@
+venv/
+python312/
+__pycache__/
+*.pyc
+audio/
+.claude/
+bin/
