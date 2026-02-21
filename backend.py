@@ -97,6 +97,46 @@ generation_jobs = {}
 generation_jobs_lock = threading.Lock()
 generation_inference_lock = threading.Lock()  # Serialize ONNX inference (not thread-safe)
 
+# Per-basename locks for metadata JSON read-modify-write (prevents race conditions
+# between alignment, enhancement, and VAD threads overwriting each other's fields)
+_metadata_locks = {}
+_metadata_locks_lock = threading.Lock()
+
+
+def _get_metadata_lock(basename):
+    """Get or create a per-basename lock for metadata JSON access."""
+    with _metadata_locks_lock:
+        if basename not in _metadata_locks:
+            _metadata_locks[basename] = threading.Lock()
+        return _metadata_locks[basename]
+
+
+def _update_metadata(basename, updates):
+    """Atomically read-modify-write metadata JSON fields.
+    Uses per-basename lock + atomic write (temp file → rename) to prevent
+    both race conditions and corruption from interrupted writes."""
+    lock = _get_metadata_lock(basename)
+    json_path = os.path.join(AUDIO_DIR, basename + ".json")
+    tmp_path = json_path + ".tmp"
+    with lock:
+        with open(json_path, "r") as f:
+            metadata = json.load(f)
+        metadata.update(updates)
+        with open(tmp_path, "w") as f:
+            json.dump(metadata, f, indent=2)
+        os.replace(tmp_path, json_path)  # atomic on same filesystem
+    return metadata
+
+
+def _read_metadata(basename):
+    """Read metadata JSON safely through the per-basename lock."""
+    lock = _get_metadata_lock(basename)
+    json_path = os.path.join(AUDIO_DIR, basename + ".json")
+    with lock:
+        with open(json_path, "r") as f:
+            return json.load(f)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -971,8 +1011,7 @@ def get_alignment(filename):
         return jsonify({"status": "unavailable"})
 
     try:
-        with open(json_path, "r") as f:
-            metadata = json.load(f)
+        metadata = _read_metadata(basename)
     except (json.JSONDecodeError, OSError):
         return jsonify({"status": "aligning"})  # file being written, try again later
 
@@ -1018,8 +1057,7 @@ def get_enhance_status(filename):
         return jsonify({"status": "unavailable"})
 
     try:
-        with open(json_path, "r") as f:
-            metadata = json.load(f)
+        metadata = _read_metadata(basename)
     except (json.JSONDecodeError, OSError):
         return jsonify({"status": "enhancing"})  # file being written, try again later
 
@@ -1068,8 +1106,7 @@ def get_vad_status(filename):
         return jsonify({"status": "unavailable"})
 
     try:
-        with open(json_path, "r") as f:
-            metadata = json.load(f)
+        metadata = _read_metadata(basename)
     except (json.JSONDecodeError, OSError):
         return jsonify({"status": "cleaning"})  # file being written, try again later
 
@@ -1200,29 +1237,24 @@ def _background_align(basename):
                 and metadata.get("word_alignment")):
             return
 
-        metadata["alignment_status"] = "aligning"
-        with open(json_path, "w") as f:
-            json.dump(metadata, f, indent=2)
+        _update_metadata(basename, {"alignment_status": "aligning"})
 
         prompt_text = metadata.get("prompt", "")
         if not prompt_text.strip():
-            metadata["alignment_status"] = "failed"
-            with open(json_path, "w") as f:
-                json.dump(metadata, f, indent=2)
+            _update_metadata(basename, {"alignment_status": "failed"})
             return
 
         alignment = _run_alignment(wav_path, prompt_text)
 
         if alignment:
-            metadata["alignment_status"] = "ready"
-            metadata["word_alignment"] = alignment
-            metadata["audio_hash"] = current_hash
-            metadata["alignment_version"] = ALIGNMENT_VERSION
+            _update_metadata(basename, {
+                "alignment_status": "ready",
+                "word_alignment": alignment,
+                "audio_hash": current_hash,
+                "alignment_version": ALIGNMENT_VERSION,
+            })
         else:
-            metadata["alignment_status"] = "failed"
-
-        with open(json_path, "w") as f:
-            json.dump(metadata, f, indent=2)
+            _update_metadata(basename, {"alignment_status": "failed"})
 
     except Exception as e:
         print(f"[alignment] Background align failed for {basename}: {e}")
@@ -1310,20 +1342,17 @@ def _background_enhance(basename):
                 _start_vad(basename)
             return
 
-        metadata["enhance_status"] = "enhancing"
-        with open(json_path, "w") as f:
-            json.dump(metadata, f, indent=2)
+        _update_metadata(basename, {"enhance_status": "enhancing"})
 
         enhanced_name = _run_enhance(wav_path)
 
         if enhanced_name:
-            metadata["enhance_status"] = "ready"
-            metadata["enhanced_filename"] = enhanced_name
+            _update_metadata(basename, {
+                "enhance_status": "ready",
+                "enhanced_filename": enhanced_name,
+            })
         else:
-            metadata["enhance_status"] = "failed"
-
-        with open(json_path, "w") as f:
-            json.dump(metadata, f, indent=2)
+            _update_metadata(basename, {"enhance_status": "failed"})
 
         # Chain: start silence removal after enhancement completes
         _start_vad(basename)
@@ -1454,9 +1483,16 @@ def _run_loudnorm(wav_path):
         return False
     tmp_path = wav_path + ".tmp.wav"
     try:
+        # Detect sample rate to avoid unnecessary resampling
+        try:
+            info = sf.info(wav_path)
+            sr = info.samplerate
+        except Exception:
+            sr = 24000
+        af_filter = f"loudnorm=I=-16:LRA=11:TP=-1.5,aresample={sr}"
         result = subprocess.run(
             [ffmpeg, "-nostdin", "-y", "-i", wav_path,
-             "-af", "loudnorm=I=-16:LRA=11:TP=-1.5,aresample=24000",
+             "-af", af_filter,
              tmp_path],
             capture_output=True, timeout=60,
         )
@@ -1464,7 +1500,11 @@ def _run_loudnorm(wav_path):
             os.replace(tmp_path, wav_path)
             return True
         else:
-            print(f"[loudnorm] ffmpeg failed: {result.stderr.decode(errors='replace')[:300]}")
+            stderr = result.stderr.decode(errors='replace')
+            # Extract actual error (skip ffmpeg banner lines)
+            err_lines = [l for l in stderr.splitlines() if l.strip() and not l.startswith(('  ', 'ffmpeg version', '(c)', 'built with', 'configuration:', 'lib'))]
+            err_msg = '\n'.join(err_lines[-5:]) if err_lines else stderr[-500:]
+            print(f"[loudnorm] ffmpeg failed (rc={result.returncode}): {err_msg}")
             return False
     except subprocess.TimeoutExpired:
         print(f"[loudnorm] Timed out normalizing {wav_path}")
@@ -1507,17 +1547,13 @@ def _background_vad(basename, max_silence_ms=500):
                 and os.path.exists(os.path.join(AUDIO_DIR, metadata["cleaned_filename"]))):
             return
 
-        metadata["vad_status"] = "cleaning"
-        with open(json_path, "w") as f:
-            json.dump(metadata, f, indent=2)
+        _update_metadata(basename, {"vad_status": "cleaning"})
 
         cleaned_name = _run_silence_removal(wav_path, max_silence_ms=max_silence_ms)
 
         if cleaned_name:
             # Run loudnorm on the cleaned file
-            metadata["vad_status"] = "normalizing"
-            with open(json_path, "w") as f:
-                json.dump(metadata, f, indent=2)
+            _update_metadata(basename, {"vad_status": "normalizing"})
 
             cleaned_path = os.path.join(AUDIO_DIR, cleaned_name)
             if _run_loudnorm(cleaned_path):
@@ -1525,23 +1561,17 @@ def _background_vad(basename, max_silence_ms=500):
             else:
                 print(f"[loudnorm] Skipped (ffmpeg unavailable or failed) for {cleaned_name}")
 
-            metadata["vad_status"] = "ready"
-            metadata["cleaned_filename"] = cleaned_name
+            _update_metadata(basename, {
+                "vad_status": "ready",
+                "cleaned_filename": cleaned_name,
+            })
         else:
-            metadata["vad_status"] = "failed"
-
-        with open(json_path, "w") as f:
-            json.dump(metadata, f, indent=2)
+            _update_metadata(basename, {"vad_status": "failed"})
 
     except Exception as e:
         print(f"[vad] Background silence removal failed for {basename}: {e}")
-        # Always finalize metadata so status doesn't stay stuck
         try:
-            with open(json_path, "r") as f:
-                metadata = json.load(f)
-            metadata["vad_status"] = "failed"
-            with open(json_path, "w") as f:
-                json.dump(metadata, f, indent=2)
+            _update_metadata(basename, {"vad_status": "failed"})
         except Exception:
             pass
     finally:

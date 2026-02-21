@@ -381,6 +381,10 @@
       background: linear-gradient(135deg, #C4B5FD 0%, #A78BFA 50%, #7C3AED 100%) !important;
     }
 
+    .gen-btn.step-align {
+      background: linear-gradient(135deg, #60A5FA 0%, #3B82F6 50%, #2563EB 100%) !important;
+    }
+
     .gen-btn.step-done {
       background: linear-gradient(135deg, #4ECDC4 0%, #2FB8AE 100%) !important;
     }
@@ -1164,6 +1168,10 @@
             <div class="step-node" data-step="5" data-state="pending">
               <div class="step-dot">5</div><span class="step-label">MP3</span>
             </div>
+            <div class="step-line" data-line="5"></div>
+            <div class="step-node" data-step="6" data-state="pending">
+              <div class="step-dot">6</div><span class="step-label">Align</span>
+            </div>
           </div>
           <div id="chunk-progress" style="display:none;margin-top:10px">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
@@ -1492,19 +1500,22 @@
     // ======================================================================
     // Confirm Dialog
     // ======================================================================
-    function confirmDialog({ title, desc, message, confirmLabel } = {}) {
+    function confirmDialog({ title, desc, message, confirmLabel, confirmColor } = {}) {
       return new Promise(resolve => {
         const modal = $('#confirm-modal');
+        const okBtn = $('#confirm-ok');
         $('#confirm-title').textContent = title || 'Move to Trash?';
         $('#confirm-desc').textContent = desc || 'This action can be undone from the TRASH folder.';
         $('#confirm-message').textContent = message || '';
-        $('#confirm-ok').textContent = confirmLabel || 'Move to Trash';
+        okBtn.textContent = confirmLabel || 'Move to Trash';
+        okBtn.style.background = confirmColor || '';
         modal.classList.remove('hidden');
         modal.style.display = 'flex';
         function cleanup(result) {
           modal.classList.add('hidden');
           modal.style.display = '';
-          $('#confirm-ok').removeEventListener('click', onOk);
+          okBtn.style.background = '';
+          okBtn.removeEventListener('click', onOk);
           $('#confirm-cancel').removeEventListener('click', onCancel);
           document.removeEventListener('keydown', onKey);
           resolve(result);
@@ -1723,19 +1734,20 @@
         l.classList.toggle('active', li === step);
       });
       const btn = $('#generate-btn'); const label = $('#gen-label'); const sp = $('#gen-spinner');
-      btn.classList.remove('step-enhance', 'step-vad', 'step-loudnorm', 'step-mp3', 'step-done');
+      btn.classList.remove('step-enhance', 'step-vad', 'step-loudnorm', 'step-mp3', 'step-align', 'step-done');
       sp.style.display = 'inline-block'; sp.classList.remove('hidden');
       if (step === 1) { label.textContent = 'Generating...'; }
       else if (step === 2) { label.textContent = 'Enhancing...'; btn.classList.add('step-enhance'); }
       else if (step === 3) { label.textContent = 'Removing Silence...'; btn.classList.add('step-vad'); }
       else if (step === 4) { label.textContent = 'Normalizing...'; btn.classList.add('step-loudnorm'); }
       else if (step === 5) { label.textContent = 'Converting MP3...'; btn.classList.add('step-mp3'); }
+      else if (step === 6) { label.textContent = 'Aligning Words...'; btn.classList.add('step-align'); }
     }
     function setStepDone() {
       document.querySelectorAll('.step-node').forEach(n => n.dataset.state = 'done');
       document.querySelectorAll('.step-line').forEach(l => { l.classList.add('done'); l.classList.remove('active'); });
       const btn = $('#generate-btn');
-      btn.classList.remove('step-enhance', 'step-vad', 'step-loudnorm', 'step-mp3');
+      btn.classList.remove('step-enhance', 'step-vad', 'step-loudnorm', 'step-mp3', 'step-align');
       btn.classList.add('step-done');
       $('#gen-label').textContent = 'Done!';
       $('#gen-spinner').style.display = 'none';
@@ -1754,13 +1766,15 @@
       $('#abort-btn').style.display = on ? 'flex' : 'none';
       if (!on && STATE.processingStep === 0) {
         $('#gen-label').textContent = 'Generate Audio';
-        btn.classList.remove('step-enhance', 'step-vad', 'step-loudnorm', 'step-mp3', 'step-done');
+        btn.classList.remove('step-enhance', 'step-vad', 'step-loudnorm', 'step-mp3', 'step-align', 'step-done');
       }
       const sp = $('#gen-spinner');
       if (!on && STATE.processingStep === 0) { sp.style.display = 'none'; sp.classList.add('hidden'); }
     }
 
-    function abortGeneration() {
+    async function abortGeneration() {
+      const yes = await confirmDialog({ title: 'Abort Generation?', desc: 'This will cancel the current generation. The backend may still finish processing in the background.', confirmLabel: 'Abort', confirmColor: 'var(--coral)' });
+      if (!yes) return;
       if (STATE.chunkEventSource) { STATE.chunkEventSource.close(); STATE.chunkEventSource = null; }
       if (STATE.generateAbort) { STATE.generateAbort.abort(); STATE.generateAbort = null; }
       if (STATE.downloadEventSource) { STATE.downloadEventSource.close(); STATE.downloadEventSource = null; hideDownloadModal(); }
@@ -1827,6 +1841,7 @@
         if (STATE.enhanceAvailable) { setStepActive(2); await pollUntilDone(`/api/audio/${result.filename}/enhance-status`, 'ready', 'enhancing', 1500); }
         if (STATE.vadAvailable) { setStepActive(3); await pollUntilDone(`/api/audio/${result.filename}/vad-status`, 'ready', 'cleaning', 1500, (data) => { if (data.status === 'normalizing' && STATE.processingStep === 3) setStepActive(4); }); }
         if (STATE.ffmpeg && STATE.nowPlaying && STATE.nowPlaying._cleanedFilename) { setStepActive(5); await autoConvertMp3(STATE.nowPlaying._cleanedFilename); STATE.nowPlaying._cleanedMp3 = true; updateCleanedMp3Btn(); }
+        if (STATE.alignmentAvailable) { setStepActive(6); await pollUntilDone(`/api/audio/${result.filename}/alignment`, 'ready', 'aligning', 2000); }
         setStepDone(); pollVersionStatuses(result.filename); await loadHistory();
       } catch (e) { if (e.name === 'AbortError') return; toast(e.message || 'Generation failed', 'error'); hideStepper(); setGenerating(false); }
     }
