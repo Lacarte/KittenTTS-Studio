@@ -1,6 +1,6 @@
-# KittenTTS Studio
+# KittenVox
 
-A web interface for [KittenTTS](https://github.com/KittenML/KittenTTS) — the ultra-lightweight open-source text-to-speech model. Generate realistic speech from text in your browser, no GPU required.
+A web studio for [KittenTTS](https://github.com/KittenML/KittenTTS) — ultra-lightweight open-source text-to-speech. Generate realistic speech from text in your browser, no GPU required.
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
 ![KittenTTS 0.8](https://img.shields.io/badge/kittentts-0.8.0-coral)
@@ -12,8 +12,16 @@ A web interface for [KittenTTS](https://github.com/KittenML/KittenTTS) — the u
 - **5 models** — Mini (80M), Micro (40M), Nano, Nano INT8, Nano FP32
 - **8 voices** — Bella, Jasper, Luna, Bruno, Rosie, Hugo, Kiki, Leo
 - **Real-time download progress** — SSE streams per-file progress when fetching models from HuggingFace Hub
+- **Audio enhancement** — LavaSR upscaling from 24kHz to 48kHz
+- **Silence removal** — Silero VAD trims dead air with configurable threshold (0.2s–1.0s)
+- **Loudness normalization** — ffmpeg loudnorm for consistent volume
+- **Karaoke word highlighting** — stable-ts forced alignment with real-time word tracking
+- **Text normalization** — expands numbers, currency, abbreviations, dates, and symbols for cleaner speech
+- **Speed control** — adjustable playback from 0.5x to 2.0x
+- **MP3 export** — one-click WAV to MP3 conversion with live progress
 - **Audio history** — generated files saved with metadata, replayable from the UI
-- **MP3 export** — one-click WAV to MP3 conversion with live progress (requires ffmpeg)
+- **Soft delete** — files moved to TRASH folder, with delete-all option
+- **Version selector** — switch between Original, Enhanced, and Cleaned audio in the player
 - **Dark mode** — toggle with persistence
 - **Keyboard shortcut** — Ctrl+Enter to generate
 - **One-click startup** — `runner.bat` finds a free port, starts the server, opens the browser
@@ -51,27 +59,42 @@ Then open `http://localhost:5000`.
 ## Requirements
 
 - **Python 3.12**
-- **ffmpeg** (optional, for MP3 conversion) — place `ffmpeg.exe` in `bin/` or install system-wide
+- **ffmpeg** (optional, for MP3 conversion and loudnorm) — place `ffmpeg.exe` in `bin/` or install system-wide
 
-Python dependencies are minimal:
+Python dependencies:
 
 ```
-kittentts==0.8.0   (pulls numpy, soundfile, onnxruntime, spacy, etc.)
-flask
-flask-cors
+kittentts==0.8.0   (pulls numpy, soundfile, onnxruntime, spacy, torch, etc.)
+flask, flask-cors
+openai-whisper, stable-ts   (forced alignment / karaoke)
+LavaSR                      (audio enhancement)
+num2words                   (text normalization)
+```
+
+## Processing Pipeline
+
+```
+User clicks Generate
+  │
+  ├─ Step 1: Generate audio (KittenTTS) → WAV + JSON metadata
+  ├─ Step 2: Enhance (LavaSR) → 48kHz upscaled WAV
+  ├─ Step 3: Remove silence (Silero VAD) → cleaned WAV
+  ├─ Step 4: Normalize loudness (ffmpeg loudnorm) → consistent volume
+  └─ Step 5: Convert to MP3 (ffmpeg) → final MP3
 ```
 
 ## Project Structure
 
 ```
-kittenTTS/
+KittenVox/
 ├── main.py             # Original CLI script
 ├── backend.py          # Flask API server
 ├── requirements.txt    # Python dependencies
 ├── setup.bat           # Environment setup
 ├── runner.bat          # One-click launcher
 ├── bin/                # Local ffmpeg (optional, gitignored)
-├── audio/              # Generated WAV/MP3 + JSON metadata (gitignored)
+├── audio/              # Generated audio + metadata (gitignored)
+│   └── TRASH/          # Soft-deleted files
 └── frontend/
     └── index.html      # Single-file UI (inline CSS/JS, Tailwind CDN)
 ```
@@ -81,16 +104,21 @@ kittenTTS/
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | GET | Serve frontend |
-| `/api/health` | GET | Server status |
+| `/api/health` | GET | Server status + feature flags |
 | `/api/models` | GET | List available models |
 | `/api/voices` | GET | List available voices |
 | `/api/model-status/<id>` | GET | Check if model is cached |
-| `/api/download-model/<id>` | GET | SSE stream — download model with progress |
-| `/api/generate` | POST | Generate audio from `{model, voice, prompt}` |
+| `/api/download-model/<id>` | GET | SSE — download model with progress |
+| `/api/generate` | POST | Generate audio from `{model, voice, prompt, speed, max_silence_ms}` |
+| `/api/normalize` | POST | Normalize text for TTS |
 | `/api/audio` | GET | List all generated audio metadata |
-| `/api/audio/<file>` | DELETE | Delete an audio file |
-| `/api/audio/<file>/mp3-convert` | GET | SSE stream — convert WAV to MP3 with progress |
-| `/api/audio/<file>/mp3` | GET | Download converted MP3 |
+| `/api/audio` | DELETE | Delete all files (move to TRASH) |
+| `/api/audio/<file>` | DELETE | Delete single file (move to TRASH) |
+| `/api/audio/<file>/alignment` | GET | Word alignment data |
+| `/api/audio/<file>/enhance-status` | GET | Enhancement status |
+| `/api/audio/<file>/vad-status` | GET | Silence removal + loudnorm status |
+| `/api/audio/<file>/mp3-convert` | GET | SSE — convert WAV to MP3 |
+| `/api/audio/<file>/mp3` | GET | Serve converted MP3 |
 | `/audio/<file>` | GET | Serve audio file |
 
 ## Models
