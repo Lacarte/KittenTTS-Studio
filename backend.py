@@ -8,6 +8,7 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import time
 import threading
 import uuid
@@ -19,7 +20,24 @@ import soundfile as sf
 from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 from huggingface_hub import hf_hub_download, try_to_load_from_cache
+from loguru import logger
 from tqdm import tqdm
+
+# ---------------------------------------------------------------------------
+# Loguru configuration
+# ---------------------------------------------------------------------------
+logger.remove()  # Remove default stderr handler
+LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Console: INFO and above, colored
+logger.add(sys.stderr, level="INFO",
+           format="<green>{time:HH:mm:ss}</green> | <level>{level:<7}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>")
+
+# File: DEBUG and above, rotated daily, kept 7 days
+logger.add(os.path.join(LOG_DIR, "kittentts_{time:YYYY-MM-DD}.log"),
+           level="DEBUG", rotation="1 day", retention="7 days", compression="zip",
+           format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<7} | {name}:{function}:{line} - {message}")
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -424,6 +442,7 @@ def pad_audio(audio, sample_rate=24000, pad_ms=50):
     return np.concatenate([pad, audio, pad])
 
 
+
 def concatenate_chunks(chunks: list, sample_rate: int = 24000,
                        gap_ms: int = 80, crossfade_ms: int = 20) -> np.ndarray:
     """Concatenate audio chunks with silence gaps and crossfade.
@@ -505,7 +524,9 @@ def load_model(model_id: str):
 
     with model_lock:
         if model_id not in loaded_models:
+            logger.info("Loading model {} ({})", model_id, repo)
             loaded_models[model_id] = KittenTTS(repo)
+            logger.info("Model {} loaded successfully", model_id)
     return loaded_models[model_id]
 
 
@@ -638,6 +659,7 @@ def download_model(model_id):
             )
             result["path"] = path
         except Exception as e:
+            logger.error("Download failed for {}: {}", filename, e)
             result["error"] = e
 
     def _stream_download(repo, filename, q):
@@ -693,6 +715,7 @@ def download_model(model_id):
             yield f"data: {json.dumps({'phase': 'ready', 'message': 'Model ready'})}\n\n"
 
         except Exception as e:
+            logger.exception("Model download/load stream failed")
             SSEProgressCapture.progress_queue = None
             yield f"data: {json.dumps({'phase': 'error', 'message': str(e)})}\n\n"
 
@@ -722,6 +745,13 @@ def _background_chunked_generate(job_id, model_id, voice, sentences, speed,
         total_inference = 0.0
 
         for i, sentence in enumerate(sentences):
+            # Check if abort was requested
+            if generation_jobs[job_id].get("abort"):
+                q.put({"phase": "aborted"})
+                with generation_jobs_lock:
+                    generation_jobs[job_id]["status"] = "aborted"
+                return
+
             q.put({"phase": "generating", "chunk": i + 1, "total": total,
                     "sentence": sentence})
 
@@ -800,7 +830,7 @@ def _background_chunked_generate(job_id, model_id, voice, sentences, speed,
             generation_jobs[job_id]["metadata"] = metadata
 
     except Exception as e:
-        print(f"[chunked-generate] Error: {e}")
+        logger.exception("Chunked generation failed")
         q.put({"phase": "error", "message": str(e)})
         with generation_jobs_lock:
             generation_jobs[job_id]["status"] = "error"
@@ -842,6 +872,7 @@ def generate():
                 return jsonify({"error": "A generation is already in progress. Please wait or abort."}), 429
 
     m = load_model(model_id)
+    logger.info("Generate request: model={}, voice={}, prompt_len={}", model_id, voice, len(prompt))
 
     tts_prompt = clean_for_tts(prompt)
     sentences = split_into_sentences(tts_prompt)
@@ -857,6 +888,7 @@ def generate():
                 "status": "running",
                 "metadata": None,
                 "created": time.time(),
+                "abort": False,
             }
         t = threading.Thread(
             target=_background_chunked_generate,
@@ -881,7 +913,7 @@ def generate():
         with generation_inference_lock:
             audio = m.generate(tts_prompt, voice=voice, speed=speed)
     except Exception as e:
-        print(f"[generate] TTS inference failed: {e}")
+        logger.exception("TTS inference failed")
         return jsonify({"error": f"Generation failed: {e}"}), 500
     end = time.perf_counter()
 
@@ -895,6 +927,8 @@ def generate():
     json_name = f"{basename}.json"
 
     sf.write(os.path.join(AUDIO_DIR, wav_name), audio, 24000)
+    logger.info("Generated {} ({:.1f}s audio in {:.2f}s, RTF={:.4f})",
+                wav_name, duration_generated, inference_time, rtf)
 
     metadata = {
         "filename": wav_name,
@@ -942,10 +976,11 @@ def generate_progress(job_id):
             try:
                 event = q.get(timeout=120)
             except Exception:
+                logger.warning("Generation SSE stream timed out for job {}", job_id)
                 yield f"data: {json.dumps({'phase': 'error', 'message': 'Timeout waiting for generation'})}\n\n"
                 break
             yield f"data: {json.dumps(event)}\n\n"
-            if event.get("phase") in ("done", "error"):
+            if event.get("phase") in ("done", "error", "aborted"):
                 break
 
     return Response(
@@ -959,6 +994,16 @@ def generate_progress(job_id):
     )
 
 
+@app.route("/api/generate-abort/<job_id>", methods=["POST"])
+def abort_generation(job_id):
+    with generation_jobs_lock:
+        job = generation_jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Unknown job ID"}), 404
+    job["abort"] = True
+    return jsonify({"status": "aborting"})
+
+
 # --- List audio files ---
 @app.route("/api/audio")
 def list_audio():
@@ -970,8 +1015,8 @@ def list_audio():
             try:
                 with open(os.path.join(AUDIO_DIR, fname), "r") as f:
                     files.append(json.load(f))
-            except (json.JSONDecodeError, OSError):
-                pass  # skip partially-written or corrupt files
+            except (json.JSONDecodeError, OSError) as e:
+                logger.debug("Skipping corrupt/partial metadata {}: {}", fname, e)
     return jsonify(files)
 
 
@@ -1014,6 +1059,7 @@ def open_audio_folder():
             subprocess.Popen(["xdg-open", folder])
         return jsonify({"status": "ok"})
     except Exception as e:
+        logger.error("Failed to open folder: {}", e)
         return jsonify({"error": str(e)}), 500
 
 
@@ -1032,7 +1078,8 @@ def delete_all_audio():
 # --- Word alignment for karaoke ---
 @app.route("/api/audio/<filename>/alignment")
 def get_alignment(filename):
-    """Return alignment data, triggering retroactive alignment for old files."""
+    """Return alignment data, triggering retroactive alignment for old files.
+    Query param ?version=enhanced returns alignment for the enhanced file."""
     if not filename.endswith(".wav"):
         return jsonify({"error": "Expected .wav filename"}), 400
 
@@ -1047,8 +1094,27 @@ def get_alignment(filename):
 
     try:
         metadata = _read_metadata(basename)
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug("Alignment metadata read failed for {} (likely being written): {}", basename, e)
         return jsonify({"status": "aligning"})  # file being written, try again later
+
+    version = request.args.get("version", "original")
+
+    if version == "enhanced":
+        enh_status = metadata.get("enhanced_alignment_status")
+        if enh_status == "ready":
+            return jsonify({
+                "status": "ready",
+                "word_alignment": metadata.get("enhanced_word_alignment", []),
+            })
+        if enh_status == "aligning":
+            return jsonify({"status": "aligning"})
+        # Enhanced file may exist but alignment not started yet — trigger it
+        if metadata.get("enhanced_filename"):
+            _start_alignment(basename)
+            return jsonify({"status": "aligning"})
+        # No enhanced file yet — fall through to original
+        return jsonify({"status": "unavailable"})
 
     status = metadata.get("alignment_status")
 
@@ -1100,7 +1166,8 @@ def get_enhance_status(filename):
 
     try:
         metadata = _read_metadata(basename)
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug("Enhancement metadata read failed for {} (likely being written): {}", basename, e)
         return jsonify({"status": "enhancing"})  # file being written, try again later
 
     status = metadata.get("enhance_status")
@@ -1149,7 +1216,8 @@ def get_vad_status(filename):
 
     try:
         metadata = _read_metadata(basename)
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug("VAD metadata read failed for {} (likely being written): {}", basename, e)
         return jsonify({"status": "cleaning"})  # file being written, try again later
 
     status = metadata.get("vad_status")
@@ -1246,7 +1314,7 @@ def _run_alignment(wav_path, prompt_text):
                 })
         return alignment if alignment else None
     except Exception as e:
-        print(f"[alignment] Error aligning {wav_path}: {e}")
+        logger.exception("Alignment failed for {}", wav_path)
         return None
 
 
@@ -1260,7 +1328,8 @@ def _audio_hash(wav_path):
 
 
 def _background_align(basename):
-    """Run alignment in background thread, update metadata JSON when done."""
+    """Run alignment in background thread, update metadata JSON when done.
+    Aligns the original WAV and, if available, the enhanced WAV too."""
     json_path = os.path.join(AUDIO_DIR, basename + ".json")
     wav_path = os.path.join(AUDIO_DIR, basename + ".wav")
 
@@ -1271,38 +1340,65 @@ def _background_align(basename):
         with open(json_path, "r") as f:
             metadata = json.load(f)
 
-        # Check if alignment is cached, audio hasn't changed, and version matches
-        current_hash = _audio_hash(wav_path)
-        if (metadata.get("alignment_status") == "ready"
-                and metadata.get("audio_hash") == current_hash
-                and metadata.get("alignment_version") == ALIGNMENT_VERSION
-                and metadata.get("word_alignment")):
-            return
-
-        _update_metadata(basename, {
-            "alignment_status": "aligning",
-            "alignment_started_at": time.time(),
-        })
-
         prompt_text = metadata.get("prompt", "")
         if not prompt_text.strip():
             _update_metadata(basename, {"alignment_status": "failed"})
             return
 
-        alignment = _run_alignment(wav_path, prompt_text)
+        # --- Align original WAV ---
+        current_hash = _audio_hash(wav_path)
+        need_original = not (
+            metadata.get("alignment_status") == "ready"
+            and metadata.get("audio_hash") == current_hash
+            and metadata.get("alignment_version") == ALIGNMENT_VERSION
+            and metadata.get("word_alignment")
+        )
 
-        if alignment:
+        if need_original:
             _update_metadata(basename, {
-                "alignment_status": "ready",
-                "word_alignment": alignment,
-                "audio_hash": current_hash,
-                "alignment_version": ALIGNMENT_VERSION,
+                "alignment_status": "aligning",
+                "alignment_started_at": time.time(),
             })
-        else:
-            _update_metadata(basename, {"alignment_status": "failed"})
+            alignment = _run_alignment(wav_path, prompt_text)
+            if alignment:
+                _update_metadata(basename, {
+                    "alignment_status": "ready",
+                    "word_alignment": alignment,
+                    "audio_hash": current_hash,
+                    "alignment_version": ALIGNMENT_VERSION,
+                })
+            else:
+                _update_metadata(basename, {"alignment_status": "failed"})
+
+        # --- Align enhanced WAV (if it exists) ---
+        # Re-read metadata: enhancement may have finished since we started
+        metadata = _read_metadata(basename)
+        enhanced_name = metadata.get("enhanced_filename")
+        if enhanced_name:
+            enhanced_path = os.path.join(AUDIO_DIR, enhanced_name)
+            if os.path.exists(enhanced_path):
+                enh_hash = _audio_hash(enhanced_path)
+                need_enhanced = not (
+                    metadata.get("enhanced_alignment_status") == "ready"
+                    and metadata.get("enhanced_audio_hash") == enh_hash
+                    and metadata.get("enhanced_alignment_version") == ALIGNMENT_VERSION
+                    and metadata.get("enhanced_word_alignment")
+                )
+                if need_enhanced:
+                    _update_metadata(basename, {"enhanced_alignment_status": "aligning"})
+                    enh_alignment = _run_alignment(enhanced_path, prompt_text)
+                    if enh_alignment:
+                        _update_metadata(basename, {
+                            "enhanced_alignment_status": "ready",
+                            "enhanced_word_alignment": enh_alignment,
+                            "enhanced_audio_hash": enh_hash,
+                            "enhanced_alignment_version": ALIGNMENT_VERSION,
+                        })
+                    else:
+                        _update_metadata(basename, {"enhanced_alignment_status": "failed"})
 
     except Exception as e:
-        print(f"[alignment] Background align failed for {basename}: {e}")
+        logger.exception("Background alignment failed for {}", basename)
     finally:
         with alignment_tasks_lock:
             alignment_tasks.pop(basename, None)
@@ -1361,7 +1457,7 @@ def _run_enhance(wav_path):
         sf.write(enhanced_path, enhanced_np, 48000)
         return enhanced_name
     except Exception as e:
-        print(f"[enhance] Error enhancing {wav_path}: {e}")
+        logger.exception("Enhancement failed for {}", wav_path)
         return None
 
 
@@ -1399,11 +1495,12 @@ def _background_enhance(basename):
         else:
             _update_metadata(basename, {"enhance_status": "failed"})
 
-        # Chain: start silence removal after enhancement completes
+        # Chain: align the enhanced file + start silence removal
+        _start_alignment(basename)
         _start_vad(basename)
 
     except Exception as e:
-        print(f"[enhance] Background enhance failed for {basename}: {e}")
+        logger.exception("Background enhancement failed for {}", basename)
         # Still try VAD even if enhancement failed
         _start_vad(basename)
     finally:
@@ -1517,7 +1614,7 @@ def _run_silence_removal(wav_path, max_silence_ms=500):
         sf.write(cleaned_path, cleaned, orig_sr)
         return cleaned_name
     except Exception as e:
-        print(f"[vad] Error removing silence from {wav_path}: {e}")
+        logger.exception("Silence removal failed for {}", wav_path)
         return None
 
 
@@ -1533,11 +1630,12 @@ def _run_loudnorm(wav_path):
             info = sf.info(wav_path)
             sr = info.samplerate
         except Exception:
+            logger.debug("Could not read sample rate from {}, defaulting to 24000", wav_path)
             sr = 24000
-        af_filter = f"loudnorm=I=-16:LRA=11:TP=-1.5,aresample={sr}"
         result = subprocess.run(
             [ffmpeg, "-nostdin", "-y", "-i", wav_path,
-             "-af", af_filter,
+             "-af", "loudnorm=I=-16:LRA=11:TP=-1.5",
+             "-ar", str(sr), "-ac", "1",
              tmp_path],
             capture_output=True, timeout=60,
         )
@@ -1549,13 +1647,13 @@ def _run_loudnorm(wav_path):
             # Extract actual error (skip ffmpeg banner lines)
             err_lines = [l for l in stderr.splitlines() if l.strip() and not l.startswith(('  ', 'ffmpeg version', '(c)', 'built with', 'configuration:', 'lib'))]
             err_msg = '\n'.join(err_lines[-5:]) if err_lines else stderr[-500:]
-            print(f"[loudnorm] ffmpeg failed (rc={result.returncode}): {err_msg}")
+            logger.error("ffmpeg loudnorm failed (rc={}): {}", result.returncode, err_msg)
             return False
     except subprocess.TimeoutExpired:
-        print(f"[loudnorm] Timed out normalizing {wav_path}")
+        logger.warning("Loudnorm timed out for {}", wav_path)
         return False
     except Exception as e:
-        print(f"[loudnorm] Error normalizing {wav_path}: {e}")
+        logger.exception("Loudnorm error for {}", wav_path)
         return False
     finally:
         if os.path.exists(tmp_path):
@@ -1602,9 +1700,9 @@ def _background_vad(basename, max_silence_ms=500):
 
             cleaned_path = os.path.join(AUDIO_DIR, cleaned_name)
             if _run_loudnorm(cleaned_path):
-                print(f"[loudnorm] Normalized {cleaned_name}")
+                logger.info("Normalized {}", cleaned_name)
             else:
-                print(f"[loudnorm] Skipped (ffmpeg unavailable or failed) for {cleaned_name}")
+                logger.warning("Loudnorm skipped for {} (ffmpeg unavailable or failed)", cleaned_name)
 
             _update_metadata(basename, {
                 "vad_status": "ready",
@@ -1614,7 +1712,7 @@ def _background_vad(basename, max_silence_ms=500):
             _update_metadata(basename, {"vad_status": "failed"})
 
     except Exception as e:
-        print(f"[vad] Background silence removal failed for {basename}: {e}")
+        logger.exception("Background silence removal failed for {}", basename)
         try:
             _update_metadata(basename, {"vad_status": "failed"})
         except Exception:
@@ -1694,7 +1792,7 @@ def convert_to_mp3(filename):
             info = sf.info(wav_path)
             total_duration = info.duration
         except Exception:
-            pass
+            logger.debug("Could not read duration from {} for MP3 progress", wav_path)
 
     def stream():
         yield f"data: {json.dumps({'phase': 'converting', 'progress': 0})}\n\n"
@@ -1752,5 +1850,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     port = args.port if args.port else find_available_port(5000)
-    print(f"\n>>> KittenTTS Studio running on http://localhost:{port}\n")
+    logger.info("KittenTTS Studio running on http://localhost:{}", port)
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

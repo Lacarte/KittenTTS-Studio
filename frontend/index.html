@@ -302,15 +302,29 @@
     }
 
     .gender-tag {
-      margin-left: 5px; font-size: 9px; font-weight: 700;
-      padding: 1px 5px; border-radius: 4px;
+      margin-left: 5px;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
       font-family: 'JetBrains Mono', monospace;
-      letter-spacing: 0.03em; vertical-align: middle;
+      letter-spacing: 0.03em;
+      vertical-align: middle;
     }
-    .gender-f { background: rgba(255,155,155,0.15); color: #FF9B9B; }
-    .gender-m { background: rgba(111,227,218,0.15); color: #6FE3DA; }
+
+    .gender-f {
+      background: rgba(255, 155, 155, 0.15);
+      color: #FF9B9B;
+    }
+
+    .gender-m {
+      background: rgba(111, 227, 218, 0.15);
+      color: #6FE3DA;
+    }
+
     .voice-chip[data-active="true"] .gender-tag {
-      background: rgba(255,255,255,0.2); color: rgba(255,255,255,0.85);
+      background: rgba(255, 255, 255, 0.2);
+      color: rgba(255, 255, 255, 0.85);
     }
 
     /* ---- Generate Button ---- */
@@ -390,8 +404,8 @@
     }
 
     .abort-btn {
-      border: 1px solid rgba(255,107,107,0.3);
-      background: rgba(255,107,107,0.08);
+      border: 1px solid rgba(255, 107, 107, 0.3);
+      background: rgba(255, 107, 107, 0.08);
       color: var(--coral);
       font-weight: 600;
       font-size: 13px;
@@ -406,10 +420,12 @@
       gap: 6px;
       white-space: nowrap;
     }
+
     .abort-btn:hover {
-      background: rgba(255,107,107,0.15);
-      border-color: rgba(255,107,107,0.5);
+      background: rgba(255, 107, 107, 0.15);
+      border-color: rgba(255, 107, 107, 0.5);
     }
+
     .abort-btn:active {
       transform: scale(0.97);
     }
@@ -652,30 +668,21 @@
     }
 
     /* ---- Alignment button ---- */
-    .align-btn {
-      transition: color 0.3s, background 0.3s;
+    .align-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+      transition: background 0.3s, box-shadow 0.3s;
     }
-
-    .align-btn .align-icon {
-      transition: opacity 0.2s, transform 0.2s;
-    }
-
-    .align-btn.is-loading .align-icon {
-      animation: align-pulse 1.2s ease-in-out infinite;
-    }
-
-    .align-btn.is-ready {
-      color: var(--accent) !important;
-    }
-
-    .align-btn.is-ready .align-icon {
-      animation: align-pop 0.4s ease-out;
-    }
+    .align-dot.pending { background: var(--text-muted); opacity: 0.4; }
+    .align-dot.aligning { background: #60A5FA; animation: align-pulse 1.2s ease-in-out infinite; box-shadow: 0 0 6px rgba(96,165,250,0.5); }
+    .align-dot.ready { background: var(--accent); box-shadow: 0 0 6px rgba(78,205,196,0.5); }
+    .align-dot.failed { background: var(--coral); opacity: 0.7; }
+    .align-dot.unavailable { display: none; }
 
     .align-status-badge {
       color: #60A5FA;
       animation: align-pulse 1.2s ease-in-out infinite;
     }
+
     .align-status-badge.failed {
       color: var(--coral);
       animation: none;
@@ -865,22 +872,6 @@
       }
     }
 
-    @keyframes align-pop {
-      0% {
-        transform: scale(0.5);
-        opacity: 0;
-      }
-
-      60% {
-        transform: scale(1.15);
-      }
-
-      100% {
-        transform: scale(1);
-        opacity: 1;
-      }
-    }
-
     .reveal {
       animation: reveal 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
     }
@@ -938,17 +929,24 @@
       <div class="flex items-center gap-3 mb-4">
         <div id="confirm-icon"
           style="width:40px;height:40px;min-width:40px;border-radius:10px;background:rgba(255,107,107,0.12);display:flex;align-items:center;justify-content:center">
-          <svg width="20" height="20" fill="none" stroke="var(--coral)" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24">
-            <path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M5 6v14a2 2 0 002 2h10a2 2 0 002-2V6"/>
-            <line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+          <svg width="20" height="20" fill="none" stroke="var(--coral)" stroke-width="2" stroke-linecap="round"
+            viewBox="0 0 24 24">
+            <path d="M3 6h18" />
+            <path d="M8 6V4h8v2" />
+            <path d="M5 6v14a2 2 0 002 2h10a2 2 0 002-2V6" />
+            <line x1="10" y1="11" x2="10" y2="17" />
+            <line x1="14" y1="11" x2="14" y2="17" />
           </svg>
         </div>
         <div>
-          <h3 id="confirm-title" class="font-display text-base font-semibold" style="color:var(--text)">Move to Trash?</h3>
-          <p id="confirm-desc" class="text-xs mt-0.5" style="color:var(--text-secondary)">This action can be undone from the TRASH folder.</p>
+          <h3 id="confirm-title" class="font-display text-base font-semibold" style="color:var(--text)">Move to Trash?
+          </h3>
+          <p id="confirm-desc" class="text-xs mt-0.5" style="color:var(--text-secondary)">This action can be undone from
+            the TRASH folder.</p>
         </div>
       </div>
-      <div id="confirm-detail" class="mb-5 p-3 rounded-lg" style="background:var(--bg-darkest);border:1px solid var(--border)">
+      <div id="confirm-detail" class="mb-5 p-3 rounded-lg"
+        style="background:var(--bg-darkest);border:1px solid var(--border);display:none">
         <p id="confirm-message" class="text-sm" style="color:var(--text-secondary);line-height:1.5"></p>
       </div>
       <div class="flex gap-2.5">
@@ -1197,7 +1195,8 @@
 
         <!-- Generate + Abort Buttons -->
         <div style="display:flex;gap:10px;align-items:stretch">
-          <button id="generate-btn" class="gen-btn reveal" style="animation-delay:0.14s;flex:1" onclick="handleGenerate()">
+          <button id="generate-btn" class="gen-btn reveal" style="animation-delay:0.14s;flex:1"
+            onclick="handleGenerate()">
             <span id="gen-label">Generate Audio</span>
             <svg id="gen-spinner" class="hidden"
               style="display:none;width:18px;height:18px;margin-left:8px;vertical-align:middle;animation:spin 0.8s linear infinite"
@@ -1207,7 +1206,11 @@
             </svg>
           </button>
           <button id="abort-btn" class="abort-btn" onclick="abortGeneration()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
             Abort
           </button>
         </div>
@@ -1323,9 +1326,8 @@
                 style="color:var(--text)">KittenML / ONNX</span></div>
             <div class="flex justify-between"><span class="text-sm" style="color:var(--text-secondary)">Sample
                 Rate</span><span class="font-mono text-sm" style="color:var(--text)">24,000 Hz</span></div>
-            <div class="flex justify-between"><span class="text-sm"
-                style="color:var(--text-secondary)">Built by</span><span class="text-sm font-medium"
-                style="color:var(--accent)">Mr. Lacarte</span></div>
+            <div class="flex justify-between"><span class="text-sm" style="color:var(--text-secondary)">Built
+                by</span><span class="text-sm font-medium" style="color:var(--accent)">Mr. Lacarte</span></div>
           </div>
         </section>
       </div>
@@ -1391,13 +1393,13 @@
         <div id="np-version-group"
           style="display:none;align-items:center;gap:2px;background:var(--bg-darkest);border-radius:7px;padding:2px;border:1px solid var(--border)">
           <button class="ver-btn" data-ver="original" onclick="switchAudioVersion('original')" title="Original (24kHz)"
-            style="padding:3px 7px;border-radius:5px;font-size:9px;font-weight:600;font-family:'JetBrains Mono',monospace;border:none;cursor:pointer;transition:all 0.2s;background:transparent;color:var(--text-muted);white-space:nowrap">Orig</button>
+            style="padding:3px 7px;border-radius:5px;font-size:9px;font-weight:600;font-family:'JetBrains Mono',monospace;border:none;cursor:pointer;transition:all 0.2s;background:transparent;color:var(--text-muted);white-space:nowrap">Original</button>
           <button class="ver-btn" data-ver="enhanced" onclick="switchAudioVersion('enhanced')" title="Enhanced (48kHz)"
             disabled
-            style="padding:3px 7px;border-radius:5px;font-size:9px;font-weight:600;font-family:'JetBrains Mono',monospace;border:none;cursor:pointer;transition:all 0.2s;background:transparent;color:var(--text-muted);white-space:nowrap">Enhance</button>
+            style="padding:3px 7px;border-radius:5px;font-size:9px;font-weight:600;font-family:'JetBrains Mono',monospace;border:none;cursor:pointer;transition:all 0.2s;background:transparent;color:var(--text-muted);white-space:nowrap">Enhanced</button>
           <button class="ver-btn" data-ver="cleaned" onclick="switchAudioVersion('cleaned')" title="Silence removed"
             disabled
-            style="padding:3px 7px;border-radius:5px;font-size:9px;font-weight:600;font-family:'JetBrains Mono',monospace;border:none;cursor:pointer;transition:all 0.2s;background:transparent;color:var(--text-muted);white-space:nowrap">Clean</button>
+            style="padding:3px 7px;border-radius:5px;font-size:9px;font-weight:600;font-family:'JetBrains Mono',monospace;border:none;cursor:pointer;transition:all 0.2s;background:transparent;color:var(--text-muted);white-space:nowrap">Cleaned</button>
         </div>
         <button id="np-mp3-cleaned" onclick="downloadCleanedMp3()" title="Download cleaned MP3"
           style="width:28px;height:28px;border-radius:7px;display:none;align-items:center;justify-content:center;color:#A78BFA;background:transparent;border:none;cursor:pointer;transition:all 0.2s"
@@ -1412,9 +1414,9 @@
           style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;transition:all 0.2s"
           onmouseover="this.style.color='var(--accent)';this.style.background='rgba(78,205,196,0.08)'"
           onmouseout="this.style.color='var(--text-muted)';this.style.background='transparent'">
-          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-            viewBox="0 0 24 24">
-            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" viewBox="0 0 24 24">
+            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
           </svg>
         </button>
         <button id="np-delete" onclick="deleteNowPlaying()" title="Delete"
@@ -1525,6 +1527,7 @@
         $('#confirm-title').textContent = title || 'Move to Trash?';
         $('#confirm-desc').textContent = desc || 'This action can be undone from the TRASH folder.';
         $('#confirm-message').textContent = message || '';
+        $('#confirm-detail').style.display = message ? '' : 'none';
         okBtn.textContent = confirmLabel || 'Move to Trash';
         okBtn.style.background = confirmColor || '';
         modal.classList.remove('hidden');
@@ -1791,8 +1794,13 @@
     }
 
     async function abortGeneration() {
-      const yes = await confirmDialog({ title: 'Abort Generation?', desc: 'This will cancel the current generation. The backend may still finish processing in the background.', confirmLabel: 'Abort', confirmColor: 'var(--coral)' });
+      const yes = await confirmDialog({ title: 'Abort Generation?', desc: 'This will stop the current generation immediately.', confirmLabel: 'Abort', confirmColor: 'var(--coral)' });
       if (!yes) return;
+      // Tell backend to abort the chunked job
+      if (STATE.currentJobId) {
+        fetch(`/api/generate-abort/${STATE.currentJobId}`, { method: 'POST' }).catch(() => { });
+        STATE.currentJobId = null;
+      }
       if (STATE.chunkEventSource) { STATE.chunkEventSource.close(); STATE.chunkEventSource = null; }
       if (STATE.generateAbort) { STATE.generateAbort.abort(); STATE.generateAbort = null; }
       if (STATE.downloadEventSource) { STATE.downloadEventSource.close(); STATE.downloadEventSource = null; hideDownloadModal(); }
@@ -1819,6 +1827,7 @@
           else if (d.phase === 'concatenating') { $('#gen-label').textContent = 'Joining chunks...'; }
           else if (d.phase === 'normalizing') { $('#gen-label').textContent = 'Normalizing audio...'; }
           else if (d.phase === 'done') { es.close(); STATE.chunkEventSource = null; hideChunkProgress(); resolve(d.metadata); }
+          else if (d.phase === 'aborted') { es.close(); STATE.chunkEventSource = null; hideChunkProgress(); reject(new DOMException('Aborted', 'AbortError')); }
           else if (d.phase === 'error') { es.close(); STATE.chunkEventSource = null; hideChunkProgress(); reject(new Error(d.message || 'Chunked generation failed')); }
         };
         es.onerror = () => { es.close(); STATE.chunkEventSource = null; hideChunkProgress(); reject(new Error('Generation connection lost')); };
@@ -1849,6 +1858,7 @@
           signal: abort.signal,
         });
         let result;
+        STATE.currentJobId = genResult.job_id || null;
         if (genResult.job_id) { result = await streamChunkedGeneration(genResult.job_id, genResult.total_chunks); }
         else { result = genResult; }
         toast(`Generated in ${result.inference_time}s (RTF ${result.rtf})`);
@@ -1859,16 +1869,18 @@
         if (STATE.enhanceAvailable) { setStepActive(2); await pollUntilDone(`/api/audio/${result.filename}/enhance-status`, 'ready', 'enhancing', 1500); }
         if (STATE.vadAvailable) { setStepActive(3); await pollUntilDone(`/api/audio/${result.filename}/vad-status`, 'ready', 'cleaning', 1500, (data) => { if (data.status === 'normalizing' && STATE.processingStep === 3) setStepActive(4); }); }
         if (STATE.ffmpeg && STATE.nowPlaying && STATE.nowPlaying._cleanedFilename) { setStepActive(5); await autoConvertMp3(STATE.nowPlaying._cleanedFilename); STATE.nowPlaying._cleanedMp3 = true; updateCleanedMp3Btn(); }
-        if (STATE.alignmentAvailable) { setStepActive(6); await pollUntilDone(`/api/audio/${result.filename}/alignment`, 'ready', 'aligning', 2000, (data) => {
-          if (data.elapsed != null) {
-            const el = Math.round(data.elapsed);
-            const mm = String(Math.floor(el / 60)).padStart(2, '0');
-            const ss = String(el % 60).padStart(2, '0');
-            let label = `Aligning… ${mm}:${ss}`;
-            if (data.audio_duration) { const pct = Math.min(95, Math.round((data.elapsed / (data.audio_duration * 1.5)) * 100)); label += ` (~${pct}%)`; }
-            $('#gen-label').textContent = label;
-          }
-        }); }
+        if (STATE.alignmentAvailable) {
+          setStepActive(6); await pollUntilDone(`/api/audio/${result.filename}/alignment`, 'ready', 'aligning', 2000, (data) => {
+            if (data.elapsed != null) {
+              const el = Math.round(data.elapsed);
+              const mm = String(Math.floor(el / 60)).padStart(2, '0');
+              const ss = String(el % 60).padStart(2, '0');
+              let label = `Aligning… ${mm}:${ss}`;
+              if (data.audio_duration) { const pct = Math.min(95, Math.round((data.elapsed / (data.audio_duration * 1.5)) * 100)); label += ` (~${pct}%)`; }
+              $('#gen-label').textContent = label;
+            }
+          });
+        }
         setStepDone(); pollVersionStatuses(result.filename); await loadHistory();
       } catch (e) { if (e.name === 'AbortError') return; toast(e.message || 'Generation failed', 'error'); hideStepper(); setGenerating(false); }
     }
@@ -1946,6 +1958,9 @@
       resetHistKaraoke(); STATE.alignment = null; STATE.activeWordIndex = -1;
       STATE.activeVersion = 'original'; updateVersionBtns(); updateCleanedMp3Btn();
     }
+    function playHistoryItem(idx) {
+      if (idx >= 0 && idx < STATE.history.length) playAudio(STATE.history[idx]);
+    }
     function playAudio(meta) {
       STATE.nowPlaying = meta; showPlayer();
       audioEl.src = `/audio/${meta.filename}`; audioEl.play().catch(() => { });
@@ -1986,7 +2001,15 @@
     function activateHistKaraoke(filename) {
       resetHistKaraoke(); STATE.alignment = null; STATE.activeWordIndex = -1;
       if (!STATE.alignmentAvailable) return;
-      _setAlignBtnState(filename, 'loading'); fetchAlignment(filename);
+      // Try cached alignment from metadata first (instant, no API call)
+      const meta = STATE.nowPlaying;
+      if (meta && meta.word_alignment && meta.word_alignment.length) {
+        STATE.alignment = meta.word_alignment; STATE.activeWordIndex = -1;
+        _showHistKaraoke(filename); _updateAlignDot(filename, 'ready'); _startKaraokeRAF();
+        return;
+      }
+      // Fall back to fetching from API
+      _updateAlignDot(filename, 'aligning'); fetchAlignment(filename);
     }
     function resetHistKaraoke() {
       $$('.hist-item').forEach(el => {
@@ -1995,18 +2018,22 @@
       });
       _stopKaraokeRAF();
     }
-    function fetchAlignment(filename) {
+    function fetchAlignment(filename, version) {
       if (STATE.alignmentPollTimer) { clearInterval(STATE.alignmentPollTimer); STATE.alignmentPollTimer = null; }
+      const ver = version || STATE.activeVersion || 'original';
+      const vParam = ver !== 'original' && ver !== 'cleaned' ? `?version=${ver}` : '';
+      let alignPollCount = 0;
       async function poll() {
+        if (++alignPollCount > 200) { clearInterval(STATE.alignmentPollTimer); STATE.alignmentPollTimer = null; _updateAlignDot(filename, 'failed'); console.warn('[alignment] poll timeout after 200 attempts'); return; }
         try {
-          const data = await api(`/api/audio/${filename}/alignment`);
+          const data = await api(`/api/audio/${filename}/alignment${vParam}`);
           if (data.status === 'ready' && data.word_alignment && data.word_alignment.length) {
             clearInterval(STATE.alignmentPollTimer); STATE.alignmentPollTimer = null;
             STATE.alignment = data.word_alignment; STATE.activeWordIndex = -1;
-            _showHistKaraoke(filename); _setAlignBtnState(filename, 'ready'); _startKaraokeRAF();
-          } else if (data.status === 'unavailable') {
+            _showHistKaraoke(filename); _updateAlignDot(filename, 'ready'); _startKaraokeRAF();
+          } else if (data.status === 'unavailable' || data.status === 'failed') {
             clearInterval(STATE.alignmentPollTimer); STATE.alignmentPollTimer = null;
-            _setAlignBtnState(filename, 'unavailable');
+            _updateAlignDot(filename, data.status);
           }
         } catch (e) { console.error('[alignment] poll error:', e); }
       }
@@ -2022,15 +2049,14 @@
       if (expand) expand.style.display = 'block'; if (plain) plain.style.display = 'none';
       if (hk) { hk.innerHTML = wordHTML; hk.style.display = 'flex'; }
     }
-    function _setAlignBtnState(filename, state) {
+    function _updateAlignDot(filename, state) {
       const histItem = document.querySelector(`.hist-item[data-filename="${filename}"]`);
-      if (!histItem) return; const btn = histItem.querySelector('.align-btn'); if (!btn) return;
-      btn.classList.remove('is-loading', 'is-ready');
-      const waveSVG = '<svg class="align-icon" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24"><line x1="4" y1="8" x2="4" y2="16"/><line x1="8" y1="5" x2="8" y2="19"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="16" y1="7" x2="16" y2="17"/><line x1="20" y1="10" x2="20" y2="14"/></svg>';
-      const checkSVG = '<svg class="align-icon" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>';
-      if (state === 'loading') { btn.disabled = true; btn.classList.add('is-loading'); btn.innerHTML = waveSVG; btn.title = 'Aligning...'; }
-      else if (state === 'ready') { btn.disabled = false; btn.classList.add('is-ready'); btn.innerHTML = checkSVG; btn.title = 'Alignment ready'; }
-      else { btn.disabled = false; btn.innerHTML = waveSVG; btn.title = 'Align words'; btn.style.color = ''; }
+      if (!histItem) return;
+      const dot = histItem.querySelector('.align-dot');
+      if (!dot) return;
+      dot.classList.remove('pending', 'aligning', 'ready', 'failed', 'unavailable');
+      dot.classList.add(state);
+      dot.title = state === 'ready' ? 'Aligned' : state === 'aligning' ? 'Aligning…' : state === 'failed' ? 'Failed' : 'Pending';
     }
     let _karaokeRAF = null;
     function _startKaraokeRAF() {
@@ -2047,7 +2073,8 @@
       while (lo <= hi) { const mid = (lo + hi) >> 1; const w = STATE.alignment[mid]; if (currentTime >= w.begin && currentTime < w.end) { activeIdx = mid; break; } else if (currentTime < w.begin) { hi = mid - 1; } else { lo = mid + 1; } }
       if (activeIdx === -1 && lo > 0) { const prev = STATE.alignment[lo - 1]; const next = lo < STATE.alignment.length ? STATE.alignment[lo] : null; if (currentTime >= prev.end && (!next || currentTime < next.begin)) activeIdx = lo - 1; }
       if (activeIdx === STATE.activeWordIndex) return; STATE.activeWordIndex = activeIdx;
-      const container = document.querySelector('.hist-karaoke[style*="flex"]'); if (!container) return;
+      const histItem = _activeHistItem(); if (!histItem) return;
+      const container = histItem.querySelector('.hist-karaoke'); if (!container || container.style.display === 'none') return;
       const words = container.querySelectorAll('.karaoke-word'); if (!words.length) return;
       words.forEach((el, i) => { if (activeIdx >= 0 && i < activeIdx) { el.classList.add('spoken'); el.classList.remove('active'); } else if (i === activeIdx) { el.classList.add('active'); el.classList.remove('spoken'); } else { el.classList.remove('active', 'spoken'); } });
       if (activeIdx >= 0 && activeIdx < words.length) { words[activeIdx].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' }); }
@@ -2059,7 +2086,7 @@
     }
     function triggerAlignment(filename) {
       if (!STATE.alignmentAvailable) { toast('Alignment not available', 'error'); return; }
-      _setAlignBtnState(filename, 'loading'); fetchAlignment(filename);
+      _updateAlignDot(filename, 'aligning'); fetchAlignment(filename);
     }
 
     // ======================================================================
@@ -2087,6 +2114,8 @@
       const wasPlaying = !audioEl.paused; const pos = audioEl.currentTime;
       STATE.activeVersion = ver; audioEl.src = src; audioEl.currentTime = pos;
       if (wasPlaying) audioEl.play().catch(() => { }); updateVersionBtns();
+      // Re-fetch alignment for the new version
+      if (STATE.alignmentAvailable) fetchAlignment(np.filename, ver);
     }
     function pollVersionStatuses(filename) {
       if (STATE.enhancePollTimer) { clearInterval(STATE.enhancePollTimer); STATE.enhancePollTimer = null; }
@@ -2095,18 +2124,22 @@
       const clnBtn = document.querySelector('.ver-btn[data-ver="cleaned"]');
       if (STATE.enhanceAvailable) {
         enhBtn.classList.add('is-loading'); showVersionGroup(true);
+        let enhPollCount = 0;
         async function pollEnh() {
+          if (++enhPollCount > 200) { clearInterval(STATE.enhancePollTimer); STATE.enhancePollTimer = null; enhBtn.classList.remove('is-loading'); console.warn('[enhance] poll timeout after 200 attempts'); return; }
           try {
             const data = await api(`/api/audio/${filename}/enhance-status`);
             if (data.status === 'ready' && data.enhanced_filename) { clearInterval(STATE.enhancePollTimer); STATE.enhancePollTimer = null; if (STATE.nowPlaying) STATE.nowPlaying._enhancedFilename = data.enhanced_filename; enhBtn.classList.remove('is-loading'); updateVersionBtns(); }
-            else if (data.status === 'unavailable') { clearInterval(STATE.enhancePollTimer); STATE.enhancePollTimer = null; enhBtn.classList.remove('is-loading'); }
+            else if (data.status === 'unavailable' || data.status === 'failed') { clearInterval(STATE.enhancePollTimer); STATE.enhancePollTimer = null; enhBtn.classList.remove('is-loading'); }
           } catch (e) { console.error('[enhance] poll error:', e); }
         }
         pollEnh(); STATE.enhancePollTimer = setInterval(pollEnh, 1500);
       }
       if (STATE.vadAvailable) {
         clnBtn.classList.add('is-loading'); showVersionGroup(true);
+        let vadPollCount = 0;
         async function pollVad() {
+          if (++vadPollCount > 200) { clearInterval(STATE.vadPollTimer); STATE.vadPollTimer = null; clnBtn.classList.remove('is-loading'); console.warn('[vad] poll timeout after 200 attempts'); return; }
           try {
             const data = await api(`/api/audio/${filename}/vad-status`);
             if (data.status === 'ready' && data.cleaned_filename) {
@@ -2117,7 +2150,7 @@
                 updateCleanedMp3Btn();
               }
               clnBtn.classList.remove('is-loading'); updateVersionBtns();
-            } else if (data.status === 'unavailable') { clearInterval(STATE.vadPollTimer); STATE.vadPollTimer = null; clnBtn.classList.remove('is-loading'); }
+            } else if (data.status === 'unavailable' || data.status === 'failed') { clearInterval(STATE.vadPollTimer); STATE.vadPollTimer = null; clnBtn.classList.remove('is-loading'); }
           } catch (e) { console.error('[vad] poll error:', e); }
         }
         pollVad(); STATE.vadPollTimer = setInterval(pollVad, 1500);
@@ -2174,14 +2207,13 @@
       $('#delete-all-btn').style.display = 'flex';
       list.innerHTML = STATE.history.map((h, i) => {
         const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-        const jsonAttr = esc(JSON.stringify(h));
         return `
     <div class="hist-item" data-filename="${esc(h.filename)}" style="animation:reveal 0.4s cubic-bezier(0.16,1,0.3,1) both;animation-delay:${i * 0.04}s">
       <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;padding-left:14px">
-        <button onclick='playAudio(${jsonAttr})' style="width:32px;height:32px;border-radius:8px;background:rgba(78,205,196,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform 0.2s;border:none;cursor:pointer" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform=''">
+        <button onclick="playHistoryItem(${i})" style="width:32px;height:32px;border-radius:8px;background:rgba(78,205,196,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform 0.2s;border:none;cursor:pointer" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform=''">
           <svg width="12" height="12" fill="var(--accent)" viewBox="0 0 24 24" style="margin-left:1px"><path d="M8 5v14l11-7z"/></svg>
         </button>
-        <button onclick='playAudio(${jsonAttr})' style="flex:1;min-width:0;background:none;border:none;cursor:pointer;text-align:left;font-family:inherit;padding:0">
+        <button onclick="playHistoryItem(${i})" style="flex:1;min-width:0;background:none;border:none;cursor:pointer;text-align:left;font-family:inherit;padding:0">
           <p style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0">${esc(h.prompt.length > 55 ? h.prompt.slice(0, 55) + '...' : h.prompt)}</p>
           <p class="font-mono" style="font-size:10px;color:var(--text-muted);margin:2px 0 0">${esc(h.voice)} · ${h.duration_seconds}s · ${timeAgo(h.timestamp)}${h.alignment_status === 'aligning' ? ` · <span class="align-status-badge" data-align-started="${h.alignment_started_at || ''}">aligning…</span>` : h.alignment_status === 'failed' ? ' · <span class="align-status-badge failed">align failed</span>' : ''}</p>
         </button>
@@ -2189,19 +2221,7 @@
         <button onclick="toggleHistText(this)" title="View full text" style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;transition:all 0.2s;flex-shrink:0" onmouseover="this.style.color='var(--accent)';this.style.background='rgba(78,205,196,0.06)'" onmouseout="this.style.color='var(--text-muted)';this.style.background='transparent'">
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="8" y1="9" x2="10" y2="9"/></svg>
         </button>
-        ${STATE.alignmentAvailable ? (() => {
-          const as = h.alignment_status || 'pending';
-          const isReady = as === 'ready';
-          const isAligning = as === 'aligning';
-          const isFailed = as === 'failed';
-          const btnCls = 'align-btn' + (isAligning ? ' is-loading' : '') + (isReady ? ' is-ready' : '');
-          const title = isReady ? 'Alignment ready — click for karaoke' : isAligning ? 'Aligning words…' : isFailed ? 'Alignment failed — click to retry' : 'Align words';
-          const color = isReady ? 'var(--accent)' : isFailed ? 'var(--coral)' : 'var(--text-muted)';
-          const waveSVG = '<svg class="align-icon" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24"><line x1="4" y1="8" x2="4" y2="16"/><line x1="8" y1="5" x2="8" y2="19"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="16" y1="7" x2="16" y2="17"/><line x1="20" y1="10" x2="20" y2="14"/></svg>';
-          const checkSVG = '<svg class="align-icon" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>';
-          const icon = isReady ? checkSVG : waveSVG;
-          return `<button class="${btnCls}" onclick="triggerAlignment('${esc(h.filename)}')" title="${title}" style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:${color};background:transparent;border:none;cursor:pointer;transition:all 0.2s;flex-shrink:0" onmouseover="this.style.background='rgba(78,205,196,0.06)'" onmouseout="this.style.background='transparent'">${icon}</button>`;
-        })() : ''}
+        ${STATE.alignmentAvailable ? `<span class="align-dot ${h.alignment_status || 'pending'}" title="${h.alignment_status === 'ready' ? 'Aligned' : h.alignment_status === 'aligning' ? 'Aligning…' : h.alignment_status === 'failed' ? 'Alignment failed' : 'Pending'}"></span>` : ''}
       </div>
       <div class="hist-text-expand" style="display:none;padding:0 14px 10px 56px;max-height:200px;overflow-y:auto">
         <p class="hist-text-plain" style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin:0;white-space:pre-wrap;word-break:break-word">${esc(h.prompt)}</p>
