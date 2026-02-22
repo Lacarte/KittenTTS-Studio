@@ -604,6 +604,21 @@
       border: 1px solid rgba(255, 255, 255, 0.06);
     }
 
+    /* ---- Library tabs ---- */
+    .lib-tab {
+      background: transparent;
+      color: var(--text-muted);
+    }
+    .lib-tab:hover {
+      color: var(--text-secondary);
+      background: rgba(255,255,255,0.03);
+    }
+    .lib-tab.active {
+      background: var(--bg-card);
+      color: var(--text);
+      box-shadow: var(--shadow-sm);
+    }
+
     /* ---- History ---- */
     .hist-item {
       position: relative;
@@ -1015,7 +1030,14 @@
           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
           <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
         </svg>
-        <span class="nav-label">Generate</span>
+        <span class="nav-label">TTS</span>
+      </button>
+      <button class="nav-item" onclick="switchPage('align')" data-page="align">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+          viewBox="0 0 24 24">
+          <path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/>
+        </svg>
+        <span class="nav-label">Alignment</span>
       </button>
       <button class="nav-item" onclick="switchPage('library')" data-page="library">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -1056,7 +1078,15 @@
         <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
         <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
       </svg>
-      <span style="font-size:10px;font-weight:600">Generate</span>
+      <span style="font-size:10px;font-weight:600">TTS</span>
+    </button>
+    <button class="flex-1 flex flex-col items-center gap-1 py-1.5" onclick="switchPage('align')" data-page="align"
+      style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-family:inherit">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        viewBox="0 0 24 24">
+        <path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/>
+      </svg>
+      <span style="font-size:10px;font-weight:600">Align</span>
     </button>
     <button class="flex-1 flex flex-col items-center gap-1 py-1.5" onclick="switchPage('library')" data-page="library"
       style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-family:inherit">
@@ -1219,10 +1249,9 @@
     <!-- ====== PAGE: LIBRARY ====== -->
     <div id="page-library" class="page">
       <div class="max-w-3xl mx-auto px-6 py-8">
-        <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center justify-between mb-4">
           <div>
             <h2 class="font-display text-2xl font-bold tracking-tight" style="color:var(--text)">Library</h2>
-            <p class="text-sm mt-1" style="color:var(--text-secondary)"><span id="history-count">0 files</span></p>
           </div>
           <button id="delete-all-btn" onclick="deleteAllAudio()" title="Delete all audio"
             style="display:none;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;border:1px solid rgba(255,107,107,0.2);background:rgba(255,107,107,0.06);color:var(--coral);cursor:pointer;transition:all 0.2s;align-items:center;gap:6px"
@@ -1237,12 +1266,109 @@
             Delete All
           </button>
         </div>
-        <div id="history-list" style="max-height:calc(100vh - 200px);overflow-y:auto;padding-right:4px">
-          <p id="history-empty" style="text-align:center;padding:48px 0;font-size:13px;color:var(--text-muted)">No audio
-            generated yet</p>
+        <!-- Library sub-tabs -->
+        <div style="display:flex;gap:2px;margin-bottom:16px;background:var(--bg-darkest);border-radius:10px;padding:3px">
+          <button class="lib-tab active" data-lib-tab="tts" onclick="switchLibTab('tts')"
+            style="flex:1;padding:7px 0;border-radius:8px;font-size:12px;font-weight:600;font-family:'JetBrains Mono',monospace;border:none;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:6px">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            TTS
+            <span id="lib-tts-count" style="font-size:10px;font-weight:500;opacity:0.6">0</span>
+          </button>
+          <button class="lib-tab" data-lib-tab="alignment" onclick="switchLibTab('alignment')"
+            style="flex:1;padding:7px 0;border-radius:8px;font-size:12px;font-weight:600;font-family:'JetBrains Mono',monospace;border:none;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:6px">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/></svg>
+            Force Alignment
+            <span id="lib-align-count" style="font-size:10px;font-weight:500;opacity:0.6">0</span>
+          </button>
+        </div>
+        <!-- TTS tab content -->
+        <div id="lib-tab-tts">
+          <p class="text-sm mb-3" style="color:var(--text-secondary)"><span id="history-count">0 files</span></p>
+          <div id="history-list" style="max-height:calc(100vh - 280px);overflow-y:auto;padding-right:4px">
+            <p id="history-empty" style="text-align:center;padding:48px 0;font-size:13px;color:var(--text-muted)">No audio generated yet</p>
+          </div>
+        </div>
+        <!-- Force Alignment tab content -->
+        <div id="lib-tab-alignment" style="display:none">
+          <p class="text-sm mb-3" style="color:var(--text-secondary)"><span id="align-history-count">0 files</span></p>
+          <div id="align-history-list" style="max-height:calc(100vh - 280px);overflow-y:auto;padding-right:4px">
+            <p id="align-history-empty" style="text-align:center;padding:48px 0;font-size:13px;color:var(--text-muted)">No force alignment files yet</p>
+          </div>
         </div>
       </div>
     </div><!-- /page-library -->
+
+    <!-- ====== PAGE: FORCE ALIGNMENT ====== -->
+    <div id="page-align" class="page">
+      <div class="max-w-2xl mx-auto px-6 py-8">
+        <div class="mb-6">
+          <h2 class="font-display text-2xl font-bold tracking-tight" style="color:var(--text)">Force Alignment</h2>
+          <p class="text-sm mt-1" style="color:var(--text-secondary)">Align audio to text with word-level timestamps</p>
+        </div>
+
+        <!-- Upload audio -->
+        <section class="card p-5 mb-4">
+          <label class="block text-[10px] font-bold uppercase tracking-[0.15em] mb-2.5"
+            style="color:var(--text-muted)">Audio File</label>
+          <div id="align-drop-zone"
+            style="border:2px dashed var(--border);border-radius:10px;padding:32px 16px;text-align:center;cursor:pointer;transition:all 0.2s"
+            onclick="$('#align-file-input').click()"
+            ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='rgba(78,205,196,0.04)'"
+            ondragleave="this.style.borderColor='var(--border)';this.style.background='transparent'"
+            ondrop="event.preventDefault();this.style.borderColor='var(--border)';this.style.background='transparent';handleAlignFileDrop(event)">
+            <svg width="28" height="28" fill="none" stroke="var(--text-muted)" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 8px">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <p id="align-file-label" style="font-size:13px;color:var(--text-muted)">Drop a WAV/MP3 file here or click to browse</p>
+            <p id="align-file-info" style="font-size:11px;color:var(--text-secondary);margin-top:4px;display:none"></p>
+          </div>
+          <input type="file" id="align-file-input" accept=".wav,.mp3,.flac,.ogg" style="display:none"
+            onchange="handleAlignFileSelect(this)">
+        </section>
+
+        <!-- Transcript text -->
+        <section class="card p-5 mb-4">
+          <label class="block text-[10px] font-bold uppercase tracking-[0.15em] mb-2.5"
+            style="color:var(--text-muted)">Transcript</label>
+          <textarea id="align-text-input" class="input-field" rows="5" placeholder="Paste the transcript text that matches the audio..."
+            style="width:100%;font-size:13.5px;line-height:1.7;resize:vertical;padding:12px 14px;font-family:'Inter',sans-serif"></textarea>
+          <div class="flex justify-between mt-2" style="font-size:10px;color:var(--text-muted);font-family:'JetBrains Mono',monospace">
+            <span id="align-text-count">0 words</span>
+            <span>English only</span>
+          </div>
+        </section>
+
+        <!-- Align button -->
+        <button id="align-run-btn" onclick="handleRunAlignment()"
+          class="gen-btn w-full"
+          style="padding:14px 24px;border-radius:12px;font-size:14px;font-weight:700;font-family:'JetBrains Mono','Fira Code',monospace;letter-spacing:0.02em;color:white;cursor:pointer;transition:all 0.3s cubic-bezier(0.16,1,0.3,1);border:none;position:relative;overflow:hidden">
+          <span id="align-btn-spinner" class="hidden" style="display:none;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:8px"></span>
+          <span id="align-btn-label">Run Alignment</span>
+        </button>
+
+        <!-- Results -->
+        <div id="align-results" style="display:none;margin-top:20px">
+          <section class="card p-5">
+            <div class="flex items-center justify-between mb-3">
+              <label class="block text-[10px] font-bold uppercase tracking-[0.15em]"
+                style="color:var(--text-muted)">Results</label>
+              <div style="display:flex;gap:6px">
+                <button onclick="copyAlignJSON()" title="Copy JSON"
+                  style="padding:4px 10px;border-radius:6px;font-size:10px;font-weight:600;font-family:'JetBrains Mono',monospace;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;transition:all 0.2s"
+                  onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'"
+                  onmouseout="this.style.color='var(--text-muted)';this.style.borderColor='var(--border)'">Copy JSON</button>
+                <button onclick="downloadAlignJSON()" title="Download JSON"
+                  style="padding:4px 10px;border-radius:6px;font-size:10px;font-weight:600;font-family:'JetBrains Mono',monospace;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;transition:all 0.2s"
+                  onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'"
+                  onmouseout="this.style.color='var(--text-muted)';this.style.borderColor='var(--border)'">Download</button>
+              </div>
+            </div>
+            <div id="align-results-stats" class="font-mono" style="font-size:11px;color:var(--text-secondary);margin-bottom:10px"></div>
+            <div id="align-results-words" style="display:flex;flex-wrap:wrap;gap:3px 4px;line-height:2;max-height:300px;overflow-y:auto;padding-right:4px"></div>
+          </section>
+        </div>
+      </div>
+    </div><!-- /page-align -->
 
     <!-- ====== PAGE: SETTINGS ====== -->
     <div id="page-settings" class="page">
@@ -1452,6 +1578,12 @@
         b.classList.toggle('active', isActive);
       });
     }
+    function switchLibTab(tab) {
+      document.querySelectorAll('.lib-tab').forEach(b => b.classList.toggle('active', b.dataset.libTab === tab));
+      $('#lib-tab-tts').style.display = tab === 'tts' ? '' : 'none';
+      $('#lib-tab-alignment').style.display = tab === 'alignment' ? '' : 'none';
+      STATE.activeLibTab = tab;
+    }
     function toggleSidebar() {
       document.getElementById('sidebar').classList.toggle('collapsed');
       localStorage.setItem('kittenTTS-sidebar', document.getElementById('sidebar').classList.contains('collapsed'));
@@ -1476,6 +1608,8 @@
       vadAvailable: false, vadPollTimer: null,
       activeVersion: 'original',
       processingStep: 0,
+      activeLibTab: 'tts',
+      alignHistory: [],
     };
 
     const $ = s => document.querySelector(s);
@@ -1869,8 +2003,8 @@
         // Keep isGenerating true — post-processing polls use the abort signal
         $('#abort-btn').style.display = 'none';
         const sig = abort.signal;
-        if (STATE.enhanceAvailable) { setStepActive(2); await pollUntilDone(`/api/audio/${result.filename}/enhance-status`, 'ready', 'enhancing', 1500, null, sig); }
-        if (STATE.vadAvailable) { setStepActive(3); await pollUntilDone(`/api/audio/${result.filename}/vad-status`, 'ready', 'cleaning', 1500, (data) => { if (data.status === 'normalizing' && STATE.processingStep === 3) setStepActive(4); }, sig); }
+        if (STATE.enhanceAvailable) { setStepActive(2); await pollUntilDone(`/api/generation/${result.filename}/enhance-status`, 'ready', 'enhancing', 1500, null, sig); }
+        if (STATE.vadAvailable) { setStepActive(3); await pollUntilDone(`/api/generation/${result.filename}/vad-status`, 'ready', 'cleaning', 1500, (data) => { if (data.status === 'normalizing' && STATE.processingStep === 3) setStepActive(4); }, sig); }
         if (STATE.ffmpeg && STATE.nowPlaying && STATE.nowPlaying._cleanedFilename) { setStepActive(5); await autoConvertMp3(STATE.nowPlaying._cleanedFilename); STATE.nowPlaying._cleanedMp3 = true; updateCleanedMp3Btn(); }
         // Alignment runs in background on the backend — no need to block the UI
         STATE.generateAbort = null;
@@ -1900,7 +2034,7 @@
     }
     function autoConvertMp3(wavFilename) {
       return new Promise((resolve, reject) => {
-        const es = new EventSource(`/api/audio/${wavFilename}/mp3-convert`);
+        const es = new EventSource(`/api/generation/${wavFilename}/mp3-convert`);
         es.onmessage = (ev) => { const d = JSON.parse(ev.data); if (d.phase === 'done') { es.close(); resolve(); } else if (d.phase === 'error') { es.close(); reject(new Error(d.message || 'MP3 conversion failed')); } };
         es.onerror = () => { es.close(); reject(new Error('MP3 conversion failed')); };
       });
@@ -1914,7 +2048,7 @@
       if (!STATE.nowPlaying || !STATE.nowPlaying._cleanedFilename) return;
       const cleanedWav = STATE.nowPlaying._cleanedFilename;
       const mp3Name = cleanedWav.replace('.wav', '.mp3');
-      fetch(`/api/audio/${cleanedWav}/mp3`)
+      fetch(`/api/generation/${cleanedWav}/mp3`)
         .then(res => { if (!res.ok) throw new Error('Not found'); return res.blob(); })
         .then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = mp3Name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000); toast('Cleaned MP3 downloaded'); })
         .catch(() => toast('MP3 not ready yet', 'error'));
@@ -1960,7 +2094,7 @@
     }
     function playAudio(meta, skipPolling) {
       STATE.nowPlaying = meta; showPlayer();
-      audioEl.src = `/audio/${meta.filename}`; audioEl.play().catch(() => { });
+      audioEl.src = `/generation/${meta.filename}`; audioEl.play().catch(() => { });
       $('#np-prompt').innerHTML = `\u201C${meta.prompt.length > 90 ? meta.prompt.slice(0, 90) + '...' : meta.prompt}\u201D`;
       $('#np-model').textContent = meta.model_id || 'mini';
       $('#np-voice').textContent = meta.voice;
@@ -2024,7 +2158,7 @@
       async function poll() {
         if (++alignPollCount > 200) { clearInterval(STATE.alignmentPollTimer); STATE.alignmentPollTimer = null; _updateAlignDot(filename, 'failed'); console.warn('[alignment] poll timeout after 200 attempts'); return; }
         try {
-          const data = await api(`/api/audio/${filename}/alignment${vParam}`);
+          const data = await api(`/api/generation/${filename}/alignment${vParam}`);
           if (data.status === 'ready' && data.word_alignment && data.word_alignment.length) {
             clearInterval(STATE.alignmentPollTimer); STATE.alignmentPollTimer = null;
             STATE.alignment = data.word_alignment; STATE.activeWordIndex = -1;
@@ -2106,9 +2240,9 @@
     function switchAudioVersion(ver) {
       const np = STATE.nowPlaying; if (!np) return;
       let src;
-      if (ver === 'enhanced' && np._enhancedFilename) src = `/audio/${np._enhancedFilename}`;
-      else if (ver === 'cleaned' && np._cleanedFilename) src = `/audio/${np._cleanedFilename}`;
-      else src = `/audio/${np.filename}`;
+      if (ver === 'enhanced' && np._enhancedFilename) src = `/generation/${np._enhancedFilename}`;
+      else if (ver === 'cleaned' && np._cleanedFilename) src = `/generation/${np._cleanedFilename}`;
+      else src = `/generation/${np.filename}`;
       const wasPlaying = !audioEl.paused; const pos = audioEl.currentTime;
       STATE.activeVersion = ver; audioEl.src = src; audioEl.currentTime = pos;
       if (wasPlaying) audioEl.play().catch(() => { }); updateVersionBtns();
@@ -2126,7 +2260,7 @@
         async function pollEnh() {
           if (++enhPollCount > 200) { clearInterval(STATE.enhancePollTimer); STATE.enhancePollTimer = null; enhBtn.classList.remove('is-loading'); console.warn('[enhance] poll timeout after 200 attempts'); return; }
           try {
-            const data = await api(`/api/audio/${filename}/enhance-status`);
+            const data = await api(`/api/generation/${filename}/enhance-status`);
             if (data.status === 'ready' && data.enhanced_filename) { clearInterval(STATE.enhancePollTimer); STATE.enhancePollTimer = null; if (STATE.nowPlaying) STATE.nowPlaying._enhancedFilename = data.enhanced_filename; enhBtn.classList.remove('is-loading'); updateVersionBtns(); }
             else if (data.status === 'unavailable' || data.status === 'failed') { clearInterval(STATE.enhancePollTimer); STATE.enhancePollTimer = null; enhBtn.classList.remove('is-loading'); }
           } catch (e) { console.error('[enhance] poll error:', e); }
@@ -2139,12 +2273,12 @@
         async function pollVad() {
           if (++vadPollCount > 200) { clearInterval(STATE.vadPollTimer); STATE.vadPollTimer = null; clnBtn.classList.remove('is-loading'); console.warn('[vad] poll timeout after 200 attempts'); return; }
           try {
-            const data = await api(`/api/audio/${filename}/vad-status`);
+            const data = await api(`/api/generation/${filename}/vad-status`);
             if (data.status === 'ready' && data.cleaned_filename) {
               clearInterval(STATE.vadPollTimer); STATE.vadPollTimer = null;
               if (STATE.nowPlaying) {
                 STATE.nowPlaying._cleanedFilename = data.cleaned_filename;
-                try { const mp3Check = await api(`/api/audio/${data.cleaned_filename}/mp3-check`); if (mp3Check.exists) STATE.nowPlaying._cleanedMp3 = true; } catch (_) { }
+                try { const mp3Check = await api(`/api/generation/${data.cleaned_filename}/mp3-check`); if (mp3Check.exists) STATE.nowPlaying._cleanedMp3 = true; } catch (_) { }
                 updateCleanedMp3Btn();
               }
               clnBtn.classList.remove('is-loading'); updateVersionBtns();
@@ -2159,7 +2293,7 @@
 
     async function openAudioFolder() {
       const filename = STATE.nowPlaying ? STATE.nowPlaying.filename : '';
-      try { await fetch('/api/open-audio-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) }); } catch (e) { toast('Could not open folder', 'error'); }
+      try { await fetch('/api/open-generation-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) }); } catch (e) { toast('Could not open folder', 'error'); }
     }
 
     async function deleteNowPlaying() {
@@ -2173,7 +2307,7 @@
         confirmLabel: 'Move to Trash',
       });
       if (!ok) return;
-      try { await api(`/api/audio/${STATE.nowPlaying.filename}`, { method: 'DELETE' }); audioEl.pause(); audioEl.src = ''; setEqActive(false); hidePlayer(); STATE.nowPlaying = null; toast('Audio deleted'); await loadHistory(); }
+      try { await api(`/api/generation/${STATE.nowPlaying.filename}`, { method: 'DELETE' }); audioEl.pause(); audioEl.src = ''; setEqActive(false); hidePlayer(); STATE.nowPlaying = null; toast('Audio deleted'); await loadHistory(); }
       catch (e) { toast(e.message, 'error'); }
     }
     async function deleteAllAudio() {
@@ -2187,7 +2321,7 @@
         confirmLabel: `Delete All ${n} Files`,
       });
       if (!ok) return;
-      try { const res = await api('/api/audio', { method: 'DELETE' }); audioEl.pause(); audioEl.src = ''; setEqActive(false); hidePlayer(); STATE.nowPlaying = null; toast(`${res.count} files moved to trash`); await loadHistory(); }
+      try { const res = await api('/api/generation', { method: 'DELETE' }); audioEl.pause(); audioEl.src = ''; setEqActive(false); hidePlayer(); STATE.nowPlaying = null; toast(`${res.count} files moved to trash`); await loadHistory(); }
       catch (e) { toast(e.message, 'error'); }
     }
 
@@ -2195,11 +2329,13 @@
     // History
     // ======================================================================
     async function loadHistory() {
-      try { STATE.history = await api('/api/audio'); renderHistory(); } catch (e) { console.error('History:', e); }
+      try { STATE.history = await api('/api/generation'); renderHistory(); } catch (e) { console.error('History:', e); }
+      try { STATE.alignHistory = await api('/api/generation/alignments'); renderAlignHistory(); } catch (_) { }
     }
     function renderHistory() {
       const list = $('#history-list');
       const emptyHTML = `<p id="history-empty" style="text-align:center;padding:48px 0;font-size:13px;color:var(--text-muted)">No audio generated yet</p>`;
+      $('#lib-tts-count').textContent = STATE.history.length;
       if (!STATE.history.length) { list.innerHTML = emptyHTML; $('#history-count').textContent = '0 files'; $('#delete-all-btn').style.display = 'none'; return; }
       $('#history-count').textContent = STATE.history.length + ' file' + (STATE.history.length !== 1 ? 's' : '');
       $('#delete-all-btn').style.display = 'flex';
@@ -2270,6 +2406,127 @@
           b.textContent = `aligning… ${mm}:${ss}`;
         });
       }, 1000);
+    }
+
+    // ======================================================================
+    // Force Alignment Page
+    // ======================================================================
+    let _alignFile = null;
+    let _alignResultData = null;
+
+    $('#align-text-input').addEventListener('input', () => {
+      const words = $('#align-text-input').value.trim().split(/\s+/).filter(Boolean).length;
+      $('#align-text-count').textContent = words + ' word' + (words !== 1 ? 's' : '');
+    });
+
+    function handleAlignFileSelect(input) {
+      if (input.files && input.files[0]) setAlignFile(input.files[0]);
+    }
+    function handleAlignFileDrop(e) {
+      const file = e.dataTransfer.files[0];
+      if (file) setAlignFile(file);
+    }
+    function setAlignFile(file) {
+      const ext = file.name.split('.').pop().toLowerCase();
+      if (!['wav', 'mp3', 'flac', 'ogg'].includes(ext)) { toast('Unsupported format — use WAV, MP3, FLAC, or OGG', 'error'); return; }
+      _alignFile = file;
+      $('#align-file-label').textContent = file.name;
+      $('#align-file-label').style.color = 'var(--text)';
+      const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+      $('#align-file-info').textContent = `${sizeMB} MB · ${ext.toUpperCase()}`;
+      $('#align-file-info').style.display = '';
+      $('#align-drop-zone').style.borderColor = 'var(--accent)';
+      setTimeout(() => { $('#align-drop-zone').style.borderColor = 'var(--border)'; }, 1000);
+    }
+
+    async function handleRunAlignment() {
+      if (!_alignFile) { toast('Select an audio file first', 'error'); return; }
+      const text = $('#align-text-input').value.trim();
+      if (!text) { toast('Enter transcript text', 'error'); return; }
+
+      const btn = $('#align-run-btn');
+      const label = $('#align-btn-label');
+      const spinner = $('#align-btn-spinner');
+      btn.disabled = true;
+      label.textContent = 'Aligning...';
+      spinner.style.display = 'inline-block';
+      spinner.classList.remove('hidden');
+      $('#align-results').style.display = 'none';
+
+      try {
+        const form = new FormData();
+        form.append('audio', _alignFile);
+        form.append('text', text);
+        const res = await fetch('/api/force-align', { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Alignment failed');
+        _alignResultData = data;
+        renderAlignResults(data);
+        toast('Alignment complete');
+      } catch (e) {
+        toast(e.message || 'Alignment failed', 'error');
+      } finally {
+        btn.disabled = false;
+        label.textContent = 'Run Alignment';
+        spinner.style.display = 'none';
+        spinner.classList.add('hidden');
+      }
+    }
+
+    function renderAlignResults(data) {
+      $('#align-results').style.display = '';
+      const words = data.alignment || [];
+      const duration = words.length ? words[words.length - 1].end : 0;
+      $('#align-results-stats').textContent = `${words.length} words · ${duration.toFixed(1)}s duration · ${data.inference_time ? data.inference_time.toFixed(2) + 's processing' : ''}`;
+      const container = $('#align-results-words');
+      container.innerHTML = words.map(w =>
+        `<span class="font-mono" style="font-size:12px;padding:2px 6px;border-radius:4px;background:var(--bg-darkest);color:var(--text);cursor:default;transition:all 0.15s" title="${w.begin.toFixed(2)}s - ${w.end.toFixed(2)}s" onmouseover="this.style.background='rgba(78,205,196,0.15)';this.style.color='var(--accent)'" onmouseout="this.style.background='var(--bg-darkest)';this.style.color='var(--text)'">${w.word}</span>`
+      ).join('');
+    }
+
+    function copyAlignJSON() {
+      if (!_alignResultData) return;
+      const json = JSON.stringify(_alignResultData.alignment || [], null, 2);
+      navigator.clipboard.writeText(json).then(() => toast('JSON copied')).catch(() => toast('Copy failed', 'error'));
+    }
+    function downloadAlignJSON() {
+      if (!_alignResultData) return;
+      const json = JSON.stringify(_alignResultData.alignment || [], null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = (_alignFile ? _alignFile.name.replace(/\.[^.]+$/, '') : 'alignment') + '_alignment.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+
+    // ======================================================================
+    // Alignment History
+    // ======================================================================
+    async function loadAlignHistory() {
+      try { STATE.alignHistory = await api('/api/generation/alignments'); renderAlignHistory(); } catch (e) { console.error('AlignHistory:', e); }
+    }
+    function renderAlignHistory() {
+      const list = $('#align-history-list');
+      const emptyHTML = `<p id="align-history-empty" style="text-align:center;padding:48px 0;font-size:13px;color:var(--text-muted)">No force alignment files yet</p>`;
+      $('#lib-align-count').textContent = STATE.alignHistory.length;
+      if (!STATE.alignHistory.length) { list.innerHTML = emptyHTML; $('#align-history-count').textContent = '0 files'; return; }
+      $('#align-history-count').textContent = STATE.alignHistory.length + ' file' + (STATE.alignHistory.length !== 1 ? 's' : '');
+      const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      list.innerHTML = STATE.alignHistory.map((h, i) => `
+    <div class="hist-item" style="animation:reveal 0.4s cubic-bezier(0.16,1,0.3,1) both;animation-delay:${i * 0.04}s">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;padding-left:14px">
+        <div style="width:32px;height:32px;border-radius:8px;background:rgba(78,205,196,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="13" height="13" fill="none" stroke="var(--accent)" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/></svg>
+        </div>
+        <div style="flex:1;min-width:0">
+          <p style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0">${esc(h.source_audio)}</p>
+          <p class="font-mono" style="font-size:10px;color:var(--text-muted);margin:2px 0 0">${h.word_count || 0} words · ${h.version || 'original'} · ${timeAgo(h.timestamp)}</p>
+        </div>
+        <span class="font-mono" style="font-size:9px;color:var(--text-muted);flex-shrink:0;background:var(--bg-darkest);padding:2px 6px;border-radius:4px">${esc(h.status)}</span>
+      </div>
+    </div>`).join('');
     }
 
     // ======================================================================

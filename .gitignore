@@ -3,5 +3,7 @@ python312/
 __pycache__/
 *.pyc
 audio/
+generated_assets/
+logs/
 .claude/
 bin/

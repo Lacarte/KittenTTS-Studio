@@ -62,11 +62,16 @@ logger.add(os.path.join(LOG_DIR, "kittentts_{time:YYYY-MM-DD}.log"),
 # Configuration
 # ---------------------------------------------------------------------------
 
-AUDIO_DIR = os.path.join(os.path.dirname(__file__), "audio")
+GENERATION_DIR = os.path.join(os.path.dirname(__file__), "generated_assets")
+AUDIO_DIR = os.path.join(GENERATION_DIR, "tts")
 TRASH_DIR = os.path.join(AUDIO_DIR, "TRASH")
+ALIGN_DIR = os.path.join(GENERATION_DIR, "force-alignment")
+ALIGN_TRASH_DIR = os.path.join(ALIGN_DIR, "TRASH")
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "frontend")
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(TRASH_DIR, exist_ok=True)
+os.makedirs(ALIGN_DIR, exist_ok=True)
+os.makedirs(ALIGN_TRASH_DIR, exist_ok=True)
 
 MODELS = {
     "mini": {
@@ -1058,7 +1063,7 @@ def abort_generation(job_id):
 
 
 # --- List audio files ---
-@app.route("/api/audio")
+@app.route("/api/generation")
 def list_audio():
     files = []
     if not os.path.exists(AUDIO_DIR):
@@ -1074,8 +1079,143 @@ def list_audio():
     return jsonify(files)
 
 
+# --- List alignment files ---
+@app.route("/api/generation/alignments")
+def list_alignments():
+    """List all TTS files that have alignment data."""
+    items = []
+    if not os.path.exists(AUDIO_DIR):
+        return jsonify(items)
+    for fname in os.listdir(AUDIO_DIR):
+        if not fname.endswith(".json") or not os.path.isfile(os.path.join(AUDIO_DIR, fname)):
+            continue
+        try:
+            with open(os.path.join(AUDIO_DIR, fname), "r") as f:
+                meta = json.load(f)
+            status = meta.get("alignment_status", "pending")
+            if status not in ("ready", "aligning", "failed"):
+                continue
+            alignment = meta.get("word_alignment", [])
+            items.append({
+                "source_audio": meta.get("filename", fname),
+                "status": status,
+                "version": "original",
+                "word_count": len(alignment),
+                "timestamp": meta.get("timestamp", ""),
+            })
+            # Also check enhanced alignment
+            if meta.get("enhanced_alignment_status") == "ready":
+                enh_alignment = meta.get("enhanced_word_alignment", [])
+                items.append({
+                    "source_audio": meta.get("filename", fname),
+                    "status": "ready",
+                    "version": "enhanced",
+                    "word_count": len(enh_alignment),
+                    "timestamp": meta.get("timestamp", ""),
+                })
+        except (json.JSONDecodeError, OSError):
+            pass
+    # Also include standalone force-alignment results
+    if os.path.exists(ALIGN_DIR):
+        for fname in os.listdir(ALIGN_DIR):
+            if not fname.endswith("_alignment.json"):
+                continue
+            try:
+                with open(os.path.join(ALIGN_DIR, fname), "r") as f:
+                    meta = json.load(f)
+                items.append({
+                    "source_audio": meta.get("source_file", fname),
+                    "status": "ready",
+                    "version": "standalone",
+                    "word_count": meta.get("word_count", 0),
+                    "timestamp": meta.get("timestamp", ""),
+                })
+            except (json.JSONDecodeError, OSError):
+                pass
+    items.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+    return jsonify(items)
+
+
+# --- Standalone force alignment ---
+@app.route("/api/force-align", methods=["POST"])
+def force_align():
+    """Run force alignment on an uploaded audio file with transcript text."""
+    if not _check_alignment_available():
+        return jsonify({"error": "Force alignment not available (stable-ts not installed)"}), 503
+
+    if "audio" not in request.files:
+        return jsonify({"error": "No audio file provided"}), 400
+    text = request.form.get("text", "").strip()
+    if not text:
+        return jsonify({"error": "No transcript text provided"}), 400
+
+    audio_file = request.files["audio"]
+    ext = os.path.splitext(audio_file.filename)[1].lower()
+    if ext not in (".wav", ".mp3", ".flac", ".ogg"):
+        return jsonify({"error": f"Unsupported format: {ext}"}), 400
+
+    # Save uploaded file temporarily
+    import tempfile
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext, dir=ALIGN_DIR)
+    try:
+        audio_file.save(tmp.name)
+        tmp.close()
+
+        # Convert to WAV if needed (alignment needs WAV)
+        wav_path = tmp.name
+        if ext != ".wav":
+            ffmpeg = _find_ffmpeg()
+            if not ffmpeg:
+                return jsonify({"error": "ffmpeg required for non-WAV files"}), 400
+            wav_tmp = tmp.name.rsplit(".", 1)[0] + "_conv.wav"
+            result = subprocess.run(
+                [ffmpeg, "-nostdin", "-y", "-i", tmp.name, "-ar", "24000", "-ac", "1", wav_tmp],
+                capture_output=True, timeout=60,
+            )
+            if result.returncode != 0:
+                return jsonify({"error": "Audio conversion failed"}), 500
+            wav_path = wav_tmp
+
+        start = time.perf_counter()
+        alignment = _run_alignment(wav_path, text)
+        elapsed = time.perf_counter() - start
+
+        if not alignment:
+            return jsonify({"error": "Alignment produced no results"}), 500
+
+        # Save result JSON to force-alignment folder
+        safe_name = re.sub(r'[^a-zA-Z0-9]+', '-', os.path.splitext(audio_file.filename)[0][:30]).strip('-')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        json_name = f"{safe_name}_{timestamp}_alignment.json"
+        result_data = {
+            "source_file": audio_file.filename,
+            "transcript": text,
+            "alignment": alignment,
+            "word_count": len(alignment),
+            "inference_time": round(elapsed, 3),
+            "timestamp": datetime.now().isoformat(),
+        }
+        with open(os.path.join(ALIGN_DIR, json_name), "w") as f:
+            json.dump(result_data, f, indent=2)
+
+        logger.success("Force-aligned  {} | {} words in {:.2f}s", audio_file.filename, len(alignment), elapsed)
+        return jsonify(result_data)
+
+    finally:
+        # Clean up temp files
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+        conv_path = tmp.name.rsplit(".", 1)[0] + "_conv.wav"
+        try:
+            os.unlink(conv_path)
+        except OSError:
+            pass
+
+
 # --- Delete audio file (move to TRASH) ---
-@app.route("/api/audio/<filename>", methods=["DELETE"])
+@app.route("/api/generation/<filename>", methods=["DELETE"])
 def delete_audio(filename):
     basename = filename.rsplit(".", 1)[0]
     moved = False
@@ -1090,7 +1230,7 @@ def delete_audio(filename):
 
 
 # --- Open audio folder in OS file manager (with file selected if provided) ---
-@app.route("/api/open-audio-folder", methods=["POST"])
+@app.route("/api/open-generation-folder", methods=["POST"])
 def open_audio_folder():
     import sys
     data = request.get_json(silent=True) or {}
@@ -1118,7 +1258,7 @@ def open_audio_folder():
 
 
 # --- Delete all audio files (move to TRASH) ---
-@app.route("/api/audio", methods=["DELETE"])
+@app.route("/api/generation", methods=["DELETE"])
 def delete_all_audio():
     count = 0
     for f in os.listdir(AUDIO_DIR):
@@ -1130,7 +1270,7 @@ def delete_all_audio():
 
 
 # --- Word alignment for karaoke ---
-@app.route("/api/audio/<filename>/alignment")
+@app.route("/api/generation/<filename>/alignment")
 def get_alignment(filename):
     """Return alignment data, triggering retroactive alignment for old files.
     Query param ?version=enhanced returns alignment for the enhanced file."""
@@ -1203,7 +1343,7 @@ def get_alignment(filename):
 
 
 # --- Audio enhancement status ---
-@app.route("/api/audio/<filename>/enhance-status")
+@app.route("/api/generation/<filename>/enhance-status")
 def get_enhance_status(filename):
     """Return enhancement status, triggering retroactive enhancement for old files."""
     if not filename.endswith(".wav"):
@@ -1253,7 +1393,7 @@ def get_enhance_status(filename):
 
 
 # --- Silence removal (VAD) status ---
-@app.route("/api/audio/<filename>/vad-status")
+@app.route("/api/generation/<filename>/vad-status")
 def get_vad_status(filename):
     """Return silence removal status, triggering retroactive cleaning for old files."""
     if not filename.endswith(".wav"):
@@ -1795,7 +1935,7 @@ def _start_vad(basename, max_silence_ms=500):
 
 
 # --- Check if MP3 exists (returns 200 always, avoids 404 console noise) ---
-@app.route("/api/audio/<filename>/mp3-check")
+@app.route("/api/generation/<filename>/mp3-check")
 def check_mp3(filename):
     if not filename.endswith(".wav"):
         return jsonify({"exists": False})
@@ -1805,7 +1945,7 @@ def check_mp3(filename):
 
 
 # --- Serve cached MP3 ---
-@app.route("/api/audio/<filename>/mp3")
+@app.route("/api/generation/<filename>/mp3")
 def serve_mp3(filename):
     if not filename.endswith(".wav"):
         return jsonify({"error": "Only .wav files can be converted"}), 400
@@ -1817,7 +1957,7 @@ def serve_mp3(filename):
 
 
 # --- Convert WAV to MP3 with SSE progress ---
-@app.route("/api/audio/<filename>/mp3-convert")
+@app.route("/api/generation/<filename>/mp3-convert")
 def convert_to_mp3(filename):
     if not filename.endswith(".wav"):
         return jsonify({"error": "Only .wav files can be converted"}), 400
@@ -1895,7 +2035,7 @@ def convert_to_mp3(filename):
 
 
 # --- Serve audio files ---
-@app.route("/audio/<path:filename>")
+@app.route("/generation/<path:filename>")
 def serve_audio(filename):
     return send_from_directory(AUDIO_DIR, filename)
 
