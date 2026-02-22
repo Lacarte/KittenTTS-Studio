@@ -1194,6 +1194,7 @@ def list_force_alignments():
                 "source_file": meta.get("source_file", ""),
                 "transcript": meta.get("transcript", ""),
                 "word_count": meta.get("word_count", len(words)),
+                "word_alignment": words,
                 "duration_seconds": duration,
                 "inference_time": meta.get("inference_time", 0),
                 "timestamp": meta.get("timestamp", ""),
@@ -1679,6 +1680,10 @@ def _background_align(basename):
 
     except Exception as e:
         logger.exception("Background alignment failed for {}", basename)
+        try:
+            _update_metadata(basename, {"alignment_status": "failed", "error_message": f"Alignment: {e}"})
+        except Exception:
+            pass
     finally:
         with alignment_tasks_lock:
             alignment_tasks.pop(basename, None)
@@ -1784,6 +1789,10 @@ def _background_enhance(basename):
 
     except Exception as e:
         logger.exception("Background enhancement failed for {}", basename)
+        try:
+            _update_metadata(basename, {"enhance_status": "failed", "error_message": f"Enhancement: {e}"})
+        except Exception:
+            pass
         # Still try VAD even if enhancement failed
         _start_vad(basename)
     finally:
@@ -2000,7 +2009,7 @@ def _background_vad(basename, max_silence_ms=500):
     except Exception as e:
         logger.exception("Background silence removal failed for {}", basename)
         try:
-            _update_metadata(basename, {"vad_status": "failed"})
+            _update_metadata(basename, {"vad_status": "failed", "error_message": f"Silence removal: {e}"})
         except Exception:
             pass
     finally:
