@@ -1862,12 +1862,12 @@
         if (genResult.job_id) { result = await streamChunkedGeneration(genResult.job_id, genResult.total_chunks); }
         else { result = genResult; }
         toast(`Generated in ${result.inference_time}s (RTF ${result.rtf})`);
-        playAudio(result); await loadHistory();
-        STATE.generateAbort = null;
-        STATE.isGenerating = false; $('#generate-btn').disabled = false;
+        playAudio(result, true); await loadHistory();
+        // Keep isGenerating true — post-processing polls use the abort signal
         $('#abort-btn').style.display = 'none';
-        if (STATE.enhanceAvailable) { setStepActive(2); await pollUntilDone(`/api/audio/${result.filename}/enhance-status`, 'ready', 'enhancing', 1500); }
-        if (STATE.vadAvailable) { setStepActive(3); await pollUntilDone(`/api/audio/${result.filename}/vad-status`, 'ready', 'cleaning', 1500, (data) => { if (data.status === 'normalizing' && STATE.processingStep === 3) setStepActive(4); }); }
+        const sig = abort.signal;
+        if (STATE.enhanceAvailable) { setStepActive(2); await pollUntilDone(`/api/audio/${result.filename}/enhance-status`, 'ready', 'enhancing', 1500, null, sig); }
+        if (STATE.vadAvailable) { setStepActive(3); await pollUntilDone(`/api/audio/${result.filename}/vad-status`, 'ready', 'cleaning', 1500, (data) => { if (data.status === 'normalizing' && STATE.processingStep === 3) setStepActive(4); }, sig); }
         if (STATE.ffmpeg && STATE.nowPlaying && STATE.nowPlaying._cleanedFilename) { setStepActive(5); await autoConvertMp3(STATE.nowPlaying._cleanedFilename); STATE.nowPlaying._cleanedMp3 = true; updateCleanedMp3Btn(); }
         if (STATE.alignmentAvailable) {
           setStepActive(6); await pollUntilDone(`/api/audio/${result.filename}/alignment`, 'ready', 'aligning', 2000, (data) => {
@@ -1879,15 +1879,20 @@
               if (data.audio_duration) { const pct = Math.min(95, Math.round((data.elapsed / (data.audio_duration * 1.5)) * 100)); label += ` (~${pct}%)`; }
               $('#gen-label').textContent = label;
             }
-          });
+          }, sig);
         }
+        STATE.generateAbort = null;
         setStepDone(); pollVersionStatuses(result.filename); await loadHistory();
-      } catch (e) { if (e.name === 'AbortError') return; toast(e.message || 'Generation failed', 'error'); hideStepper(); setGenerating(false); }
+      } catch (e) { if (e.name === 'AbortError') { hideStepper(); setGenerating(false); return; } toast(e.message || 'Generation failed', 'error'); hideStepper(); setGenerating(false); }
     }
 
-    function pollUntilDone(url, doneStatus, pendingStatus, interval, onProgress) {
+    function pollUntilDone(url, doneStatus, pendingStatus, interval, onProgress, abortSignal) {
       return new Promise((resolve, reject) => {
+        let attempts = 0;
+        const maxAttempts = 200; // ~5 min at 1.5s interval
         async function check() {
+          if (abortSignal && abortSignal.aborted) { resolve({ status: 'aborted' }); return; }
+          if (++attempts > maxAttempts) { console.warn('[pollUntilDone] max attempts reached for', url); resolve({ status: 'timeout' }); return; }
           try {
             const data = await api(url);
             if (data.status === doneStatus) {
@@ -1896,7 +1901,7 @@
               resolve(data);
             } else if (data.status === 'unavailable' || data.status === 'failed') { resolve(data); }
             else { if (onProgress) onProgress(data); setTimeout(check, interval); }
-          } catch (e) { reject(e); }
+          } catch (e) { if (abortSignal && abortSignal.aborted) { resolve({ status: 'aborted' }); } else { reject(e); } }
         }
         check();
       });
@@ -1961,7 +1966,7 @@
     function playHistoryItem(idx) {
       if (idx >= 0 && idx < STATE.history.length) playAudio(STATE.history[idx]);
     }
-    function playAudio(meta) {
+    function playAudio(meta, skipPolling) {
       STATE.nowPlaying = meta; showPlayer();
       audioEl.src = `/audio/${meta.filename}`; audioEl.play().catch(() => { });
       $('#np-prompt').innerHTML = `\u201C${meta.prompt.length > 90 ? meta.prompt.slice(0, 90) + '...' : meta.prompt}\u201D`;
@@ -1969,7 +1974,8 @@
       $('#np-voice').textContent = meta.voice;
       $('#np-rtf').textContent = 'RTF ' + meta.rtf;
       updatePlayIcon(); activateHistKaraoke(meta.filename);
-      STATE.activeVersion = 'original'; updateVersionBtns(); updateCleanedMp3Btn(); pollVersionStatuses(meta.filename);
+      STATE.activeVersion = 'original'; updateVersionBtns(); updateCleanedMp3Btn();
+      if (!skipPolling) pollVersionStatuses(meta.filename);
     }
     function togglePlayback() { if (audioEl.paused) audioEl.play().catch(() => { }); else audioEl.pause(); updatePlayIcon(); }
     function updatePlayIcon() {
@@ -2221,6 +2227,9 @@
         <button onclick="toggleHistText(this)" title="View full text" style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;transition:all 0.2s;flex-shrink:0" onmouseover="this.style.color='var(--accent)';this.style.background='rgba(78,205,196,0.06)'" onmouseout="this.style.color='var(--text-muted)';this.style.background='transparent'">
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="8" y1="9" x2="10" y2="9"/></svg>
         </button>
+        <button onclick="copyHistPrompt(${i})" title="Copy text" style="width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;transition:all 0.2s;flex-shrink:0" onmouseover="this.style.color='var(--accent)';this.style.background='rgba(78,205,196,0.06)'" onmouseout="this.style.color='var(--text-muted)';this.style.background='transparent'">
+          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        </button>
         ${STATE.alignmentAvailable ? `<span class="align-dot ${h.alignment_status || 'pending'}" title="${h.alignment_status === 'ready' ? 'Aligned' : h.alignment_status === 'aligning' ? 'Aligning…' : h.alignment_status === 'failed' ? 'Alignment failed' : 'Pending'}"></span>` : ''}
       </div>
       <div class="hist-text-expand" style="display:none;padding:0 14px 10px 56px;max-height:200px;overflow-y:auto">
@@ -2237,6 +2246,11 @@
       expand.style.display = visible ? 'none' : 'block';
       btn.style.color = visible ? 'var(--text-muted)' : 'var(--accent)';
       btn.style.background = visible ? 'transparent' : 'rgba(78,205,196,0.06)';
+    }
+    function copyHistPrompt(idx) {
+      if (idx < 0 || idx >= STATE.history.length) return;
+      const text = STATE.history[idx].prompt || '';
+      navigator.clipboard.writeText(text).then(() => toast('Copied to clipboard')).catch(() => toast('Copy failed', 'error'));
     }
     function timeAgo(ts) {
       const d = (Date.now() - new Date(ts).getTime()) / 1000;

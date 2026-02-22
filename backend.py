@@ -1010,13 +1010,14 @@ def list_audio():
     files = []
     if not os.path.exists(AUDIO_DIR):
         return jsonify(files)
-    for fname in sorted(os.listdir(AUDIO_DIR), reverse=True):
+    for fname in os.listdir(AUDIO_DIR):
         if fname.endswith(".json") and os.path.isfile(os.path.join(AUDIO_DIR, fname)):
             try:
                 with open(os.path.join(AUDIO_DIR, fname), "r") as f:
                     files.append(json.load(f))
             except (json.JSONDecodeError, OSError) as e:
                 logger.debug("Skipping corrupt/partial metadata {}: {}", fname, e)
+    files.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
     return jsonify(files)
 
 
