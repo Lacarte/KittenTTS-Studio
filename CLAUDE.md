@@ -18,9 +18,13 @@ kittentts-studio/
 ├── runner.bat              # Windows one-click launcher
 ├── setup.bat               # Environment setup
 ├── models/                 # Cached TTS models (persisted)
-├── audio/                  # Generated audio + metadata
-│   ├── reports-of-my-death_20250220_143052.wav
-│   └── reports-of-my-death_20250220_143052.json
+├── generated_assets/       # All generated output (gitignored)
+│   ├── tts/                # TTS audio + metadata
+│   │   ├── reports-of-my-death_20250220_143052.wav
+│   │   ├── reports-of-my-death_20250220_143052.json
+│   │   └── TRASH/          # Soft-deleted TTS files
+│   └── force-alignment/    # Standalone alignment results
+│       └── TRASH/          # Soft-deleted alignment files
 └── frontend/
     └── index.html          # Single-file, inline everything
 ```
@@ -61,8 +65,10 @@ rtf = inference_time / duration_generated
 | `/api/model-status/<model_id>` | GET | Check cached status + file list |
 | `/api/download-model/<model_id>` | GET (SSE) | Stream download progress in real-time |
 | `/api/generate` | POST | `{model, voice, prompt}` → generate audio |
-| `/api/audio` | GET | List all generated files with metadata |
-| `/audio/<filename>` | GET | Serve audio file |
+| `/api/generation` | GET | List all generated files with metadata |
+| `/api/generation/alignments` | GET | List alignment data (TTS + standalone) |
+| `/api/force-align` | POST | Standalone force alignment (audio + text upload) |
+| `/generation/<filename>` | GET | Serve audio file |
 | `/` | GET | Serve `frontend/index.html` |
 
 **SSE Download Progress Format:**
@@ -351,7 +357,7 @@ taskkill /FI "WINDOWTITLE eq KittenTTS Backend*" /F >nul 2>&1
 - [ ] Model download shows real-time progress via SSE (3 files: config, onnx, voices)
 - [ ] Generation shows loader with token count estimation
 - [ ] Audio auto-plays on completion with native player
-- [ ] Files saved to `/audio/` with `excerpt_timestamp` naming + JSON metadata
+- [ ] Files saved to `generated_assets/tts/` with `excerpt_timestamp` naming + JSON metadata
 - [ ] History panel lists all files, clickable to replay
 - [ ] `setup.bat` creates venv and installs dependencies
 - [ ] `runner.bat` auto-detects port, launches backend, opens browser

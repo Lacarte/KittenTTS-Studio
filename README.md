@@ -93,8 +93,11 @@ KittenTTS-Studio/
 ├── setup.bat           # Environment setup
 ├── runner.bat          # One-click launcher
 ├── bin/                # Local ffmpeg (optional, gitignored)
-├── audio/              # Generated audio + metadata (gitignored)
-│   └── TRASH/          # Soft-deleted files
+├── generated_assets/   # All generated output (gitignored)
+│   ├── tts/            # TTS audio + metadata
+│   │   └── TRASH/      # Soft-deleted TTS files
+│   └── force-alignment/ # Standalone alignment results
+│       └── TRASH/      # Soft-deleted alignment files
 └── frontend/
     └── index.html      # Single-file UI (inline CSS/JS, Tailwind CDN)
 ```
@@ -111,15 +114,17 @@ KittenTTS-Studio/
 | `/api/download-model/<id>` | GET | SSE — download model with progress |
 | `/api/generate` | POST | Generate audio from `{model, voice, prompt, speed, max_silence_ms}` |
 | `/api/normalize` | POST | Normalize text for TTS |
-| `/api/audio` | GET | List all generated audio metadata |
-| `/api/audio` | DELETE | Delete all files (move to TRASH) |
-| `/api/audio/<file>` | DELETE | Delete single file (move to TRASH) |
-| `/api/audio/<file>/alignment` | GET | Word alignment data |
-| `/api/audio/<file>/enhance-status` | GET | Enhancement status |
-| `/api/audio/<file>/vad-status` | GET | Silence removal + loudnorm status |
-| `/api/audio/<file>/mp3-convert` | GET | SSE — convert WAV to MP3 |
-| `/api/audio/<file>/mp3` | GET | Serve converted MP3 |
-| `/audio/<file>` | GET | Serve audio file |
+| `/api/generation` | GET | List all generated audio metadata |
+| `/api/generation` | DELETE | Delete all files (move to TRASH) |
+| `/api/generation/<file>` | DELETE | Delete single file (move to TRASH) |
+| `/api/generation/<file>/alignment` | GET | Word alignment data |
+| `/api/generation/<file>/enhance-status` | GET | Enhancement status |
+| `/api/generation/<file>/vad-status` | GET | Silence removal + loudnorm status |
+| `/api/generation/<file>/mp3-convert` | GET | SSE — convert WAV to MP3 |
+| `/api/generation/<file>/mp3` | GET | Serve converted MP3 |
+| `/api/generation/alignments` | GET | List alignment data (TTS + standalone) |
+| `/api/force-align` | POST | Standalone force alignment (audio + text upload) |
+| `/generation/<file>` | GET | Serve audio file |
 
 ## Models
 

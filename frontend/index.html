@@ -604,21 +604,6 @@
       border: 1px solid rgba(255, 255, 255, 0.06);
     }
 
-    /* ---- Library tabs ---- */
-    .lib-tab {
-      background: transparent;
-      color: var(--text-muted);
-    }
-    .lib-tab:hover {
-      color: var(--text-secondary);
-      background: rgba(255,255,255,0.03);
-    }
-    .lib-tab.active {
-      background: var(--bg-card);
-      color: var(--text);
-      box-shadow: var(--shadow-sm);
-    }
-
     /* ---- History ---- */
     .hist-item {
       position: relative;
@@ -645,6 +630,73 @@
 
     .hist-item:hover::before {
       opacity: 1;
+    }
+
+    .hist-tag {
+      display: inline-block;
+      font-size: 8px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      letter-spacing: 0.06em;
+      padding: 1px 5px;
+      border-radius: 3px;
+      vertical-align: middle;
+      line-height: 1.5;
+    }
+
+    .hist-tag.tts {
+      background: rgba(78, 205, 196, 0.12);
+      color: var(--accent);
+    }
+
+    .hist-tag.align {
+      background: rgba(196, 181, 253, 0.12);
+      color: #C4B5FD;
+    }
+
+    .hist-item[data-type="align"]::before {
+      background: #C4B5FD;
+    }
+
+    .hist-item[data-type="align"]:hover {
+      background: rgba(196, 181, 253, 0.04);
+    }
+
+    .hist-filter-bar {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 12px;
+    }
+
+    .hist-filter-btn {
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      letter-spacing: 0.04em;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .hist-filter-btn:hover {
+      border-color: var(--text-secondary);
+      color: var(--text-secondary);
+    }
+
+    .hist-filter-btn[data-active="true"] {
+      border-color: var(--accent);
+      background: rgba(78, 205, 196, 0.08);
+      color: var(--accent);
+    }
+
+    .hist-filter-btn.align-filter[data-active="true"] {
+      border-color: #C4B5FD;
+      background: rgba(196, 181, 253, 0.08);
+      color: #C4B5FD;
     }
 
     /* ---- Karaoke ---- */
@@ -680,14 +732,37 @@
 
     /* ---- Alignment button ---- */
     .align-dot {
-      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
       transition: background 0.3s, box-shadow 0.3s;
     }
-    .align-dot.pending { background: var(--text-muted); opacity: 0.4; }
-    .align-dot.aligning { background: #60A5FA; animation: align-pulse 1.2s ease-in-out infinite; box-shadow: 0 0 6px rgba(96,165,250,0.5); }
-    .align-dot.ready { background: var(--accent); box-shadow: 0 0 6px rgba(78,205,196,0.5); }
-    .align-dot.failed { background: var(--coral); opacity: 0.7; }
-    .align-dot.unavailable { display: none; }
+
+    .align-dot.pending {
+      background: var(--text-muted);
+      opacity: 0.4;
+    }
+
+    .align-dot.aligning {
+      background: #60A5FA;
+      animation: align-pulse 1.2s ease-in-out infinite;
+      box-shadow: 0 0 6px rgba(96, 165, 250, 0.5);
+    }
+
+    .align-dot.ready {
+      background: var(--accent);
+      box-shadow: 0 0 6px rgba(78, 205, 196, 0.5);
+    }
+
+    .align-dot.failed {
+      background: var(--coral);
+      opacity: 0.7;
+    }
+
+    .align-dot.unavailable {
+      display: none;
+    }
 
     .align-status-badge {
       color: #60A5FA;
@@ -1035,7 +1110,8 @@
       <button class="nav-item" onclick="switchPage('align')" data-page="align">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
           viewBox="0 0 24 24">
-          <path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/>
+          <path d="M4 7h16M4 12h16M4 17h10" />
+          <circle cx="19" cy="17" r="2" />
         </svg>
         <span class="nav-label">Alignment</span>
       </button>
@@ -1084,7 +1160,8 @@
       style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-family:inherit">
       <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
         viewBox="0 0 24 24">
-        <path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/>
+        <path d="M4 7h16M4 12h16M4 17h10" />
+        <circle cx="19" cy="17" r="2" />
       </svg>
       <span style="font-size:10px;font-weight:600">Align</span>
     </button>
@@ -1266,34 +1343,15 @@
             Delete All
           </button>
         </div>
-        <!-- Library sub-tabs -->
-        <div style="display:flex;gap:2px;margin-bottom:16px;background:var(--bg-darkest);border-radius:10px;padding:3px">
-          <button class="lib-tab active" data-lib-tab="tts" onclick="switchLibTab('tts')"
-            style="flex:1;padding:7px 0;border-radius:8px;font-size:12px;font-weight:600;font-family:'JetBrains Mono',monospace;border:none;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:6px">
-            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-            TTS
-            <span id="lib-tts-count" style="font-size:10px;font-weight:500;opacity:0.6">0</span>
-          </button>
-          <button class="lib-tab" data-lib-tab="alignment" onclick="switchLibTab('alignment')"
-            style="flex:1;padding:7px 0;border-radius:8px;font-size:12px;font-weight:600;font-family:'JetBrains Mono',monospace;border:none;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:6px">
-            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/></svg>
-            Force Alignment
-            <span id="lib-align-count" style="font-size:10px;font-weight:500;opacity:0.6">0</span>
-          </button>
+        <p class="text-sm mb-2" style="color:var(--text-secondary)"><span id="history-count">0 files</span></p>
+        <div class="hist-filter-bar">
+          <button class="hist-filter-btn" data-filter="all" data-active="true" onclick="setHistFilter('all')">ALL</button>
+          <button class="hist-filter-btn" data-filter="tts" data-active="false" onclick="setHistFilter('tts')">#TTS</button>
+          <button class="hist-filter-btn align-filter" data-filter="align" data-active="false" onclick="setHistFilter('align')">#ALIGNMENT</button>
         </div>
-        <!-- TTS tab content -->
-        <div id="lib-tab-tts">
-          <p class="text-sm mb-3" style="color:var(--text-secondary)"><span id="history-count">0 files</span></p>
-          <div id="history-list" style="max-height:calc(100vh - 280px);overflow-y:auto;padding-right:4px">
-            <p id="history-empty" style="text-align:center;padding:48px 0;font-size:13px;color:var(--text-muted)">No audio generated yet</p>
-          </div>
-        </div>
-        <!-- Force Alignment tab content -->
-        <div id="lib-tab-alignment" style="display:none">
-          <p class="text-sm mb-3" style="color:var(--text-secondary)"><span id="align-history-count">0 files</span></p>
-          <div id="align-history-list" style="max-height:calc(100vh - 280px);overflow-y:auto;padding-right:4px">
-            <p id="align-history-empty" style="text-align:center;padding:48px 0;font-size:13px;color:var(--text-muted)">No force alignment files yet</p>
-          </div>
+        <div id="history-list" style="max-height:calc(100vh - 240px);overflow-y:auto;padding-right:4px">
+          <p id="history-empty" style="text-align:center;padding:48px 0;font-size:13px;color:var(--text-muted)">No audio
+            generated yet</p>
         </div>
       </div>
     </div><!-- /page-library -->
@@ -1316,10 +1374,14 @@
             ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='rgba(78,205,196,0.04)'"
             ondragleave="this.style.borderColor='var(--border)';this.style.background='transparent'"
             ondrop="event.preventDefault();this.style.borderColor='var(--border)';this.style.background='transparent';handleAlignFileDrop(event)">
-            <svg width="28" height="28" fill="none" stroke="var(--text-muted)" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 8px">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+            <svg width="28" height="28" fill="none" stroke="var(--text-muted)" stroke-width="1.5" viewBox="0 0 24 24"
+              style="margin:0 auto 8px">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
-            <p id="align-file-label" style="font-size:13px;color:var(--text-muted)">Drop a WAV/MP3 file here or click to browse</p>
+            <p id="align-file-label" style="font-size:13px;color:var(--text-muted)">Drop a WAV/MP3 file here or click to
+              browse</p>
             <p id="align-file-info" style="font-size:11px;color:var(--text-secondary);margin-top:4px;display:none"></p>
           </div>
           <input type="file" id="align-file-input" accept=".wav,.mp3,.flac,.ogg" style="display:none"
@@ -1330,19 +1392,21 @@
         <section class="card p-5 mb-4">
           <label class="block text-[10px] font-bold uppercase tracking-[0.15em] mb-2.5"
             style="color:var(--text-muted)">Transcript</label>
-          <textarea id="align-text-input" class="input-field" rows="5" placeholder="Paste the transcript text that matches the audio..."
+          <textarea id="align-text-input" class="input-field" rows="5"
+            placeholder="Paste the transcript text that matches the audio..."
             style="width:100%;font-size:13.5px;line-height:1.7;resize:vertical;padding:12px 14px;font-family:'Inter',sans-serif"></textarea>
-          <div class="flex justify-between mt-2" style="font-size:10px;color:var(--text-muted);font-family:'JetBrains Mono',monospace">
+          <div class="flex justify-between mt-2"
+            style="font-size:10px;color:var(--text-muted);font-family:'JetBrains Mono',monospace">
             <span id="align-text-count">0 words</span>
             <span>English only</span>
           </div>
         </section>
 
         <!-- Align button -->
-        <button id="align-run-btn" onclick="handleRunAlignment()"
-          class="gen-btn w-full"
+        <button id="align-run-btn" onclick="handleRunAlignment()" class="gen-btn w-full"
           style="padding:14px 24px;border-radius:12px;font-size:14px;font-weight:700;font-family:'JetBrains Mono','Fira Code',monospace;letter-spacing:0.02em;color:white;cursor:pointer;transition:all 0.3s cubic-bezier(0.16,1,0.3,1);border:none;position:relative;overflow:hidden">
-          <span id="align-btn-spinner" class="hidden" style="display:none;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:8px"></span>
+          <span id="align-btn-spinner" class="hidden"
+            style="display:none;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:8px"></span>
           <span id="align-btn-label">Run Alignment</span>
         </button>
 
@@ -1356,15 +1420,23 @@
                 <button onclick="copyAlignJSON()" title="Copy JSON"
                   style="padding:4px 10px;border-radius:6px;font-size:10px;font-weight:600;font-family:'JetBrains Mono',monospace;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;transition:all 0.2s"
                   onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'"
-                  onmouseout="this.style.color='var(--text-muted)';this.style.borderColor='var(--border)'">Copy JSON</button>
+                  onmouseout="this.style.color='var(--text-muted)';this.style.borderColor='var(--border)'">Copy
+                  JSON</button>
                 <button onclick="downloadAlignJSON()" title="Download JSON"
                   style="padding:4px 10px;border-radius:6px;font-size:10px;font-weight:600;font-family:'JetBrains Mono',monospace;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;transition:all 0.2s"
                   onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'"
                   onmouseout="this.style.color='var(--text-muted)';this.style.borderColor='var(--border)'">Download</button>
+                <button onclick="deleteAlignResult()" title="Move to Trash"
+                  style="padding:4px 10px;border-radius:6px;font-size:10px;font-weight:600;font-family:'JetBrains Mono',monospace;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;transition:all 0.2s"
+                  onmouseover="this.style.color='var(--primary)';this.style.borderColor='var(--primary)'"
+                  onmouseout="this.style.color='var(--text-muted)';this.style.borderColor='var(--border)'">Delete</button>
               </div>
             </div>
-            <div id="align-results-stats" class="font-mono" style="font-size:11px;color:var(--text-secondary);margin-bottom:10px"></div>
-            <div id="align-results-words" style="display:flex;flex-wrap:wrap;gap:3px 4px;line-height:2;max-height:300px;overflow-y:auto;padding-right:4px"></div>
+            <div id="align-results-stats" class="font-mono"
+              style="font-size:11px;color:var(--text-secondary);margin-bottom:10px"></div>
+            <div id="align-results-words"
+              style="display:flex;flex-wrap:wrap;gap:3px 4px;line-height:2;max-height:300px;overflow-y:auto;padding-right:4px">
+            </div>
           </section>
         </div>
       </div>
@@ -1578,12 +1650,6 @@
         b.classList.toggle('active', isActive);
       });
     }
-    function switchLibTab(tab) {
-      document.querySelectorAll('.lib-tab').forEach(b => b.classList.toggle('active', b.dataset.libTab === tab));
-      $('#lib-tab-tts').style.display = tab === 'tts' ? '' : 'none';
-      $('#lib-tab-alignment').style.display = tab === 'alignment' ? '' : 'none';
-      STATE.activeLibTab = tab;
-    }
     function toggleSidebar() {
       document.getElementById('sidebar').classList.toggle('collapsed');
       localStorage.setItem('kittenTTS-sidebar', document.getElementById('sidebar').classList.contains('collapsed'));
@@ -1608,8 +1674,7 @@
       vadAvailable: false, vadPollTimer: null,
       activeVersion: 'original',
       processingStep: 0,
-      activeLibTab: 'tts',
-      alignHistory: [],
+      histFilter: 'all',
     };
 
     const $ = s => document.querySelector(s);
@@ -2090,11 +2155,28 @@
       STATE.activeVersion = 'original'; updateVersionBtns(); updateCleanedMp3Btn();
     }
     function playHistoryItem(idx) {
-      if (idx >= 0 && idx < STATE.history.length) playAudio(STATE.history[idx]);
+      if (idx >= 0 && idx < STATE.history.length) {
+        const h = STATE.history[idx];
+        if (h._type === 'force-alignment') playAlignAudio(h);
+        else playAudio(h);
+      }
+    }
+    function playAlignAudio(meta) {
+      STATE.nowPlaying = { ...meta, _isAlign: true };
+      showPlayer();
+      audioEl.src = `/generation/force-alignment/${meta.folder}/${meta.source_file}`;
+      audioEl.play().catch(() => { });
+      const text = meta.transcript || '';
+      $('#np-prompt').innerHTML = `\u201C${text.length > 90 ? text.slice(0, 90) + '...' : text}\u201D`;
+      $('#np-model').textContent = '';
+      $('#np-voice').textContent = meta.source_file || '';
+      $('#np-rtf').textContent = meta.word_count + ' words';
+      updatePlayIcon();
+      STATE.activeVersion = 'original'; updateVersionBtns(); updateCleanedMp3Btn();
     }
     function playAudio(meta, skipPolling) {
       STATE.nowPlaying = meta; showPlayer();
-      audioEl.src = `/generation/${meta.filename}`; audioEl.play().catch(() => { });
+      audioEl.src = `/generation/${meta.folder}/${meta.filename}`; audioEl.play().catch(() => { });
       $('#np-prompt').innerHTML = `\u201C${meta.prompt.length > 90 ? meta.prompt.slice(0, 90) + '...' : meta.prompt}\u201D`;
       $('#np-model').textContent = meta.model_id || 'mini';
       $('#np-voice').textContent = meta.voice;
@@ -2240,9 +2322,9 @@
     function switchAudioVersion(ver) {
       const np = STATE.nowPlaying; if (!np) return;
       let src;
-      if (ver === 'enhanced' && np._enhancedFilename) src = `/generation/${np._enhancedFilename}`;
-      else if (ver === 'cleaned' && np._cleanedFilename) src = `/generation/${np._cleanedFilename}`;
-      else src = `/generation/${np.filename}`;
+      if (ver === 'enhanced' && np._enhancedFilename) src = `/generation/${np.folder}/${np._enhancedFilename}`;
+      else if (ver === 'cleaned' && np._cleanedFilename) src = `/generation/${np.folder}/${np._cleanedFilename}`;
+      else src = `/generation/${np.folder}/${np.filename}`;
       const wasPlaying = !audioEl.paused; const pos = audioEl.currentTime;
       STATE.activeVersion = ver; audioEl.src = src; audioEl.currentTime = pos;
       if (wasPlaying) audioEl.play().catch(() => { }); updateVersionBtns();
@@ -2298,8 +2380,9 @@
 
     async function deleteNowPlaying() {
       if (!STATE.nowPlaying) return;
-      const prompt = STATE.nowPlaying.prompt;
-      const excerpt = prompt.length > 60 ? prompt.slice(0, 60) + '...' : prompt;
+      const np = STATE.nowPlaying;
+      const text = np._isAlign ? (np.transcript || '') : (np.prompt || '');
+      const excerpt = text.length > 60 ? text.slice(0, 60) + '...' : text;
       const ok = await confirmDialog({
         title: 'Delete this audio?',
         desc: 'The file will be moved to the TRASH folder.',
@@ -2307,8 +2390,14 @@
         confirmLabel: 'Move to Trash',
       });
       if (!ok) return;
-      try { await api(`/api/generation/${STATE.nowPlaying.filename}`, { method: 'DELETE' }); audioEl.pause(); audioEl.src = ''; setEqActive(false); hidePlayer(); STATE.nowPlaying = null; toast('Audio deleted'); await loadHistory(); }
-      catch (e) { toast(e.message, 'error'); }
+      try {
+        if (np._isAlign) {
+          await api(`/api/generation/alignment/${np.folder}`, { method: 'DELETE' });
+        } else {
+          await api(`/api/generation/${np.filename}`, { method: 'DELETE' });
+        }
+        audioEl.pause(); audioEl.src = ''; setEqActive(false); hidePlayer(); STATE.nowPlaying = null; toast('Audio deleted'); await loadHistory();
+      } catch (e) { toast(e.message, 'error'); }
     }
     async function deleteAllAudio() {
       if (!STATE.history.length) return;
@@ -2329,27 +2418,76 @@
     // History
     // ======================================================================
     async function loadHistory() {
-      try { STATE.history = await api('/api/generation'); renderHistory(); } catch (e) { console.error('History:', e); }
-      try { STATE.alignHistory = await api('/api/generation/alignments'); renderAlignHistory(); } catch (_) { }
+      try {
+        const [tts, align] = await Promise.all([
+          api('/api/generation'),
+          api('/api/generation/force-alignment').catch(() => []),
+        ]);
+        tts.forEach(h => { h._type = 'tts'; });
+        align.forEach(h => { h._type = 'force-alignment'; });
+        const merged = [...tts, ...align];
+        merged.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+        STATE.history = merged;
+        renderHistory();
+      } catch (e) { console.error('History:', e); }
     }
     function renderHistory() {
       const list = $('#history-list');
       const emptyHTML = `<p id="history-empty" style="text-align:center;padding:48px 0;font-size:13px;color:var(--text-muted)">No audio generated yet</p>`;
-      $('#lib-tts-count').textContent = STATE.history.length;
       if (!STATE.history.length) { list.innerHTML = emptyHTML; $('#history-count').textContent = '0 files'; $('#delete-all-btn').style.display = 'none'; return; }
-      $('#history-count').textContent = STATE.history.length + ' file' + (STATE.history.length !== 1 ? 's' : '');
-      $('#delete-all-btn').style.display = 'flex';
-      list.innerHTML = STATE.history.map((h, i) => {
+      // Apply filter
+      const filtered = STATE.histFilter === 'all' ? STATE.history
+        : STATE.histFilter === 'tts' ? STATE.history.filter(h => h._type !== 'force-alignment')
+        : STATE.history.filter(h => h._type === 'force-alignment');
+      $('#history-count').textContent = filtered.length + ' file' + (filtered.length !== 1 ? 's' : '') + (STATE.histFilter !== 'all' ? ` (${STATE.history.length} total)` : '');
+      $('#delete-all-btn').style.display = STATE.history.some(h => h._type !== 'force-alignment') ? 'flex' : 'none';
+      if (!filtered.length) { list.innerHTML = `<p style="text-align:center;padding:32px 0;font-size:13px;color:var(--text-muted)">No ${STATE.histFilter === 'tts' ? 'TTS' : 'alignment'} files</p>`; return; }
+      list.innerHTML = filtered.map((h, vi) => {
+        // Resolve original index in STATE.history for playback
+        const i = STATE.history.indexOf(h);
         const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-        return `
-    <div class="hist-item" data-filename="${esc(h.filename)}" style="animation:reveal 0.4s cubic-bezier(0.16,1,0.3,1) both;animation-delay:${i * 0.04}s">
+        const isAlign = h._type === 'force-alignment';
+        const tag = isAlign
+          ? '<span class="hist-tag align">#ALIGNMENT</span>'
+          : '<span class="hist-tag tts">#TTS</span>';
+        const displayText = isAlign ? (h.transcript || '') : (h.prompt || '');
+        const truncated = displayText.length > 55 ? displayText.slice(0, 55) + '...' : displayText;
+        const playBtnColor = isAlign ? '#C4B5FD' : 'var(--accent)';
+        const playBtnBg = isAlign ? 'rgba(196,181,253,0.1)' : 'rgba(78,205,196,0.1)';
+        // Different play icon: waveform for alignment, triangle for TTS
+        const playIcon = isAlign
+          ? `<svg width="14" height="14" fill="none" stroke="${playBtnColor}" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24"><path d="M2 12h2l3-7 4 14 4-10 3 6h4"/></svg>`
+          : `<svg width="12" height="12" fill="${playBtnColor}" viewBox="0 0 24 24" style="margin-left:1px"><path d="M8 5v14l11-7z"/></svg>`;
+        if (isAlign) {
+          return `
+    <div class="hist-item" data-folder="${esc(h.folder)}" data-type="align" style="animation:reveal 0.4s cubic-bezier(0.16,1,0.3,1) both;animation-delay:${vi * 0.04}s">
       <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;padding-left:14px">
-        <button onclick="playHistoryItem(${i})" style="width:32px;height:32px;border-radius:8px;background:rgba(78,205,196,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform 0.2s;border:none;cursor:pointer" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform=''">
-          <svg width="12" height="12" fill="var(--accent)" viewBox="0 0 24 24" style="margin-left:1px"><path d="M8 5v14l11-7z"/></svg>
+        <button onclick="playHistoryItem(${i})" style="width:32px;height:32px;border-radius:8px;background:${playBtnBg};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform 0.2s;border:none;cursor:pointer" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform=''">
+          ${playIcon}
         </button>
         <button onclick="playHistoryItem(${i})" style="flex:1;min-width:0;background:none;border:none;cursor:pointer;text-align:left;font-family:inherit;padding:0">
-          <p style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0">${esc(h.prompt.length > 55 ? h.prompt.slice(0, 55) + '...' : h.prompt)}</p>
-          <p class="font-mono" style="font-size:10px;color:var(--text-muted);margin:2px 0 0">${esc(h.voice)} · ${h.duration_seconds}s · ${timeAgo(h.timestamp)}${h.alignment_status === 'aligning' ? ` · <span class="align-status-badge" data-align-started="${h.alignment_started_at || ''}">aligning…</span>` : h.alignment_status === 'failed' ? ' · <span class="align-status-badge failed">align failed</span>' : ''}</p>
+          <p style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0">${esc(truncated)}</p>
+          <p class="font-mono" style="font-size:10px;color:var(--text-muted);margin:2px 0 0">${tag} ${h.duration_seconds}s · ${h.word_count} words · ${timeAgo(h.timestamp)}</p>
+        </button>
+        <span class="font-mono" style="font-size:9px;color:var(--text-muted);flex-shrink:0;background:var(--bg-darkest);padding:2px 6px;border-radius:4px">${esc(h.source_file || '')}</span>
+        <button onclick="toggleHistText(this)" title="View full text" style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;transition:all 0.2s;flex-shrink:0" onmouseover="this.style.color='#C4B5FD';this.style.background='rgba(196,181,253,0.06)'" onmouseout="this.style.color='var(--text-muted)';this.style.background='transparent'">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="8" y1="9" x2="10" y2="9"/></svg>
+        </button>
+      </div>
+      <div class="hist-text-expand" style="display:none;padding:0 14px 10px 56px;max-height:200px;overflow-y:auto">
+        <p class="hist-text-plain" style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin:0;white-space:pre-wrap;word-break:break-word">${esc(displayText)}</p>
+      </div>
+    </div>`;
+        }
+        return `
+    <div class="hist-item" data-filename="${esc(h.filename)}" data-type="tts" style="animation:reveal 0.4s cubic-bezier(0.16,1,0.3,1) both;animation-delay:${vi * 0.04}s">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;padding-left:14px">
+        <button onclick="playHistoryItem(${i})" style="width:32px;height:32px;border-radius:8px;background:${playBtnBg};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform 0.2s;border:none;cursor:pointer" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform=''">
+          ${playIcon}
+        </button>
+        <button onclick="playHistoryItem(${i})" style="flex:1;min-width:0;background:none;border:none;cursor:pointer;text-align:left;font-family:inherit;padding:0">
+          <p style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0">${esc(truncated)}</p>
+          <p class="font-mono" style="font-size:10px;color:var(--text-muted);margin:2px 0 0">${tag} ${esc(h.voice)} · ${h.duration_seconds}s · ${timeAgo(h.timestamp)}${h.alignment_status === 'ready' && h.word_alignment ? ` · <span style="color:var(--accent)">${h.word_alignment.length} words aligned</span>` : h.alignment_status === 'aligning' ? ` · <span class="align-status-badge" data-align-started="${h.alignment_started_at || ''}">aligning…</span>` : h.alignment_status === 'failed' ? ' · <span class="align-status-badge failed">align failed</span>' : ''}</p>
         </button>
         <span class="font-mono" style="font-size:9px;color:var(--text-muted);flex-shrink:0;background:var(--bg-darkest);padding:2px 6px;border-radius:4px">${esc(h.model_id || '')}</span>
         <button onclick="toggleHistText(this)" title="View full text" style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;transition:all 0.2s;flex-shrink:0" onmouseover="this.style.color='var(--accent)';this.style.background='rgba(78,205,196,0.06)'" onmouseout="this.style.color='var(--text-muted)';this.style.background='transparent'">
@@ -2367,6 +2505,13 @@
     </div>`;
       }).join('');
       if (STATE.history.some(h => h.alignment_status === 'aligning')) _startAlignBadgeTimer();
+    }
+    function setHistFilter(filter) {
+      STATE.histFilter = filter;
+      document.querySelectorAll('.hist-filter-btn').forEach(b => {
+        b.dataset.active = b.dataset.filter === filter ? 'true' : 'false';
+      });
+      renderHistory();
     }
     function toggleHistText(btn) {
       const expand = btn.closest('.hist-item').querySelector('.hist-text-expand');
@@ -2477,7 +2622,10 @@
       $('#align-results').style.display = '';
       const words = data.alignment || [];
       const duration = words.length ? words[words.length - 1].end : 0;
-      $('#align-results-stats').textContent = `${words.length} words · ${duration.toFixed(1)}s duration · ${data.inference_time ? data.inference_time.toFixed(2) + 's processing' : ''}`;
+      let stats = `${words.length} words · ${duration.toFixed(1)}s duration`;
+      if (data.inference_time) stats += ` · ${data.inference_time.toFixed(2)}s processing`;
+      if (data.folder) stats += ` · ${data.folder}/`;
+      $('#align-results-stats').textContent = stats;
       const container = $('#align-results-words');
       container.innerHTML = words.map(w =>
         `<span class="font-mono" style="font-size:12px;padding:2px 6px;border-radius:4px;background:var(--bg-darkest);color:var(--text);cursor:default;transition:all 0.15s" title="${w.begin.toFixed(2)}s - ${w.end.toFixed(2)}s" onmouseover="this.style.background='rgba(78,205,196,0.15)';this.style.color='var(--accent)'" onmouseout="this.style.background='var(--bg-darkest)';this.style.color='var(--text)'">${w.word}</span>`
@@ -2500,33 +2648,21 @@
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     }
-
-    // ======================================================================
-    // Alignment History
-    // ======================================================================
-    async function loadAlignHistory() {
-      try { STATE.alignHistory = await api('/api/generation/alignments'); renderAlignHistory(); } catch (e) { console.error('AlignHistory:', e); }
-    }
-    function renderAlignHistory() {
-      const list = $('#align-history-list');
-      const emptyHTML = `<p id="align-history-empty" style="text-align:center;padding:48px 0;font-size:13px;color:var(--text-muted)">No force alignment files yet</p>`;
-      $('#lib-align-count').textContent = STATE.alignHistory.length;
-      if (!STATE.alignHistory.length) { list.innerHTML = emptyHTML; $('#align-history-count').textContent = '0 files'; return; }
-      $('#align-history-count').textContent = STATE.alignHistory.length + ' file' + (STATE.alignHistory.length !== 1 ? 's' : '');
-      const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-      list.innerHTML = STATE.alignHistory.map((h, i) => `
-    <div class="hist-item" style="animation:reveal 0.4s cubic-bezier(0.16,1,0.3,1) both;animation-delay:${i * 0.04}s">
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;padding-left:14px">
-        <div style="width:32px;height:32px;border-radius:8px;background:rgba(78,205,196,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <svg width="13" height="13" fill="none" stroke="var(--accent)" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/></svg>
-        </div>
-        <div style="flex:1;min-width:0">
-          <p style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0">${esc(h.source_audio)}</p>
-          <p class="font-mono" style="font-size:10px;color:var(--text-muted);margin:2px 0 0">${h.word_count || 0} words · ${h.version || 'original'} · ${timeAgo(h.timestamp)}</p>
-        </div>
-        <span class="font-mono" style="font-size:9px;color:var(--text-muted);flex-shrink:0;background:var(--bg-darkest);padding:2px 6px;border-radius:4px">${esc(h.status)}</span>
-      </div>
-    </div>`).join('');
+    async function deleteAlignResult() {
+      if (!_alignResultData || !_alignResultData.folder) return;
+      const ok = await confirmDialog({
+        title: 'Delete this alignment?',
+        desc: 'The folder will be moved to the TRASH folder.',
+        message: _alignResultData.folder,
+        confirmLabel: 'Move to Trash',
+      });
+      if (!ok) return;
+      try {
+        await api(`/api/generation/alignment/${_alignResultData.folder}`, { method: 'DELETE' });
+        _alignResultData = null;
+        $('#align-results').style.display = 'none';
+        toast('Alignment deleted');
+      } catch (e) { toast(e.message, 'error'); }
     }
 
     // ======================================================================

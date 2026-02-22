@@ -34,13 +34,17 @@ User clicks Generate
 
 ### Audio File Variants
 ```
-audio/
-  some-text_20260221_143052.wav          # Original (24kHz)
-  some-text_20260221_143052.json         # Metadata
-  some-text_20260221_143052_enhanced.wav # Enhanced (48kHz, LavaSR)
-  some-text_20260221_143052_cleaned.wav  # Silence removed + loudnorm
-  some-text_20260221_143052_cleaned.mp3  # MP3 of cleaned version
-  TRASH/                                 # Soft-deleted files
+generated_assets/
+  tts/
+    some-text_20260221_143052.wav          # Original (24kHz)
+    some-text_20260221_143052.json         # Metadata
+    some-text_20260221_143052_enhanced.wav # Enhanced (48kHz, LavaSR)
+    some-text_20260221_143052_cleaned.wav  # Silence removed + loudnorm
+    some-text_20260221_143052_cleaned.mp3  # MP3 of cleaned version
+    TRASH/                                 # Soft-deleted TTS files
+  force-alignment/
+    audio-name_20260222_alignment.json     # Standalone alignment results
+    TRASH/                                 # Soft-deleted alignment files
 ```
 
 ### Player Version Selector
@@ -87,15 +91,17 @@ audio/
 | `/api/download-model/<id>` | GET (SSE) | Stream download progress |
 | `/api/generate` | POST | Generate audio (accepts model, voice, prompt, speed, max_silence_ms) |
 | `/api/normalize` | POST | Normalize text for TTS |
-| `/api/audio` | GET | List history |
-| `/api/audio` | DELETE | Delete all (move to TRASH) |
-| `/api/audio/<file>` | DELETE | Delete single (move to TRASH) |
-| `/audio/<file>` | GET | Serve audio file |
-| `/api/audio/<file>/alignment` | GET | Word alignment data |
-| `/api/audio/<file>/enhance-status` | GET | Enhancement status |
-| `/api/audio/<file>/vad-status` | GET | Silence removal + loudnorm status |
-| `/api/audio/<file>/mp3-convert` | GET (SSE) | Convert WAV to MP3 with progress |
-| `/api/audio/<file>/mp3` | GET | Serve cached MP3 |
+| `/api/generation` | GET | List history |
+| `/api/generation` | DELETE | Delete all (move to TRASH) |
+| `/api/generation/<file>` | DELETE | Delete single (move to TRASH) |
+| `/generation/<file>` | GET | Serve audio file |
+| `/api/generation/<file>/alignment` | GET | Word alignment data |
+| `/api/generation/<file>/enhance-status` | GET | Enhancement status |
+| `/api/generation/<file>/vad-status` | GET | Silence removal + loudnorm status |
+| `/api/generation/<file>/mp3-convert` | GET (SSE) | Convert WAV to MP3 with progress |
+| `/api/generation/<file>/mp3` | GET | Serve cached MP3 |
+| `/api/generation/alignments` | GET | List alignment data (TTS + standalone) |
+| `/api/force-align` | POST | Standalone force alignment (audio + text upload) |
 
 ### Text Processing
 - `clean_for_tts()` — strips markdown `*_#\`~`, replaces URLs with "link", collapses whitespace (applied before TTS generation)

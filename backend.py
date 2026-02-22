@@ -153,12 +153,26 @@ def _get_metadata_lock(basename):
         return _metadata_locks[basename]
 
 
+def _tts_job_dir(basename):
+    """Return the per-generation subfolder for a TTS job."""
+    return os.path.join(AUDIO_DIR, basename)
+
+
+def _folder_for_file(filename):
+    """Derive the TTS job folder name from any variant filename (original, enhanced, cleaned)."""
+    base = filename.rsplit(".", 1)[0] if "." in filename else filename
+    for suffix in ("_cleaned", "_enhanced"):
+        if base.endswith(suffix):
+            return base[: -len(suffix)]
+    return base
+
+
 def _update_metadata(basename, updates):
     """Atomically read-modify-write metadata JSON fields.
     Uses per-basename lock + atomic write (temp file → rename) to prevent
     both race conditions and corruption from interrupted writes."""
     lock = _get_metadata_lock(basename)
-    json_path = os.path.join(AUDIO_DIR, basename + ".json")
+    json_path = os.path.join(_tts_job_dir(basename), basename + ".json")
     tmp_path = json_path + ".tmp"
     with lock:
         with open(json_path, "r") as f:
@@ -173,7 +187,7 @@ def _update_metadata(basename, updates):
 def _read_metadata(basename):
     """Read metadata JSON safely through the per-basename lock."""
     lock = _get_metadata_lock(basename)
-    json_path = os.path.join(AUDIO_DIR, basename + ".json")
+    json_path = os.path.join(_tts_job_dir(basename), basename + ".json")
     with lock:
         with open(json_path, "r") as f:
             return json.load(f)
@@ -816,7 +830,9 @@ def _background_chunked_generate(job_id, model_id, voice, sentences, speed,
         audio = concatenate_chunks(audio_chunks, sample_rate=24000, gap_ms=80, crossfade_ms=20)
         audio = pad_audio(audio, sample_rate=24000)
 
-        wav_path = os.path.join(AUDIO_DIR, basename + ".wav")
+        job_dir = _tts_job_dir(basename)
+        os.makedirs(job_dir, exist_ok=True)
+        wav_path = os.path.join(job_dir, basename + ".wav")
         sf.write(wav_path, audio, 24000)
 
         # Apply loudnorm
@@ -834,6 +850,7 @@ def _background_chunked_generate(job_id, model_id, voice, sentences, speed,
 
         metadata = {
             "filename": basename + ".wav",
+            "folder": basename,
             "prompt": prompt.strip(),
             "model": MODELS[model_id]["repo"],
             "model_id": model_id,
@@ -850,7 +867,7 @@ def _background_chunked_generate(job_id, model_id, voice, sentences, speed,
             "chunked": True,
             "num_chunks": total,
         }
-        json_path = os.path.join(AUDIO_DIR, basename + ".json")
+        json_path = os.path.join(job_dir, basename + ".json")
         with open(json_path, "w") as f:
             json.dump(metadata, f, indent=2)
 
@@ -982,14 +999,17 @@ def generate():
     rtf = inference_time / duration_generated
 
     basename = generate_filename(prompt)
+    job_dir = _tts_job_dir(basename)
+    os.makedirs(job_dir, exist_ok=True)
     wav_name = f"{basename}.wav"
     json_name = f"{basename}.json"
 
-    sf.write(os.path.join(AUDIO_DIR, wav_name), audio, 24000)
+    sf.write(os.path.join(job_dir, wav_name), audio, 24000)
     logger.success("Generated  {:.1f}s audio in {:.2f}s | RTF {:.2f}", duration_generated, inference_time, rtf)
 
     metadata = {
         "filename": wav_name,
+        "folder": basename,
         "prompt": prompt.strip(),
         "model": MODELS[model_id]["repo"],
         "model_id": model_id,
@@ -1004,7 +1024,7 @@ def generate():
         "words": words,
         "approx_tokens": approx_tokens,
     }
-    with open(os.path.join(AUDIO_DIR, json_name), "w") as f:
+    with open(os.path.join(job_dir, json_name), "w") as f:
         json.dump(metadata, f, indent=2)
 
     # Kick off background alignment and enhancement
@@ -1068,13 +1088,17 @@ def list_audio():
     files = []
     if not os.path.exists(AUDIO_DIR):
         return jsonify(files)
-    for fname in os.listdir(AUDIO_DIR):
-        if fname.endswith(".json") and os.path.isfile(os.path.join(AUDIO_DIR, fname)):
+    for entry in os.listdir(AUDIO_DIR):
+        entry_path = os.path.join(AUDIO_DIR, entry)
+        if not os.path.isdir(entry_path) or entry == "TRASH":
+            continue
+        json_path = os.path.join(entry_path, entry + ".json")
+        if os.path.isfile(json_path):
             try:
-                with open(os.path.join(AUDIO_DIR, fname), "r") as f:
+                with open(json_path, "r") as f:
                     files.append(json.load(f))
             except (json.JSONDecodeError, OSError) as e:
-                logger.debug("Skipping corrupt/partial metadata {}: {}", fname, e)
+                logger.debug("Skipping corrupt/partial metadata {}: {}", entry, e)
     files.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
     return jsonify(files)
 
@@ -1086,18 +1110,22 @@ def list_alignments():
     items = []
     if not os.path.exists(AUDIO_DIR):
         return jsonify(items)
-    for fname in os.listdir(AUDIO_DIR):
-        if not fname.endswith(".json") or not os.path.isfile(os.path.join(AUDIO_DIR, fname)):
+    for entry in os.listdir(AUDIO_DIR):
+        entry_path = os.path.join(AUDIO_DIR, entry)
+        if not os.path.isdir(entry_path) or entry == "TRASH":
+            continue
+        json_path = os.path.join(entry_path, entry + ".json")
+        if not os.path.isfile(json_path):
             continue
         try:
-            with open(os.path.join(AUDIO_DIR, fname), "r") as f:
+            with open(json_path, "r") as f:
                 meta = json.load(f)
             status = meta.get("alignment_status", "pending")
             if status not in ("ready", "aligning", "failed"):
                 continue
             alignment = meta.get("word_alignment", [])
             items.append({
-                "source_audio": meta.get("filename", fname),
+                "source_audio": meta.get("filename", entry),
                 "status": status,
                 "version": "original",
                 "word_count": len(alignment),
@@ -1107,7 +1135,7 @@ def list_alignments():
             if meta.get("enhanced_alignment_status") == "ready":
                 enh_alignment = meta.get("enhanced_word_alignment", [])
                 items.append({
-                    "source_audio": meta.get("filename", fname),
+                    "source_audio": meta.get("filename", entry),
                     "status": "ready",
                     "version": "enhanced",
                     "word_count": len(enh_alignment),
@@ -1115,18 +1143,23 @@ def list_alignments():
                 })
         except (json.JSONDecodeError, OSError):
             pass
-    # Also include standalone force-alignment results
+    # Also include standalone force-alignment results (subfolders with alignment.json)
     if os.path.exists(ALIGN_DIR):
-        for fname in os.listdir(ALIGN_DIR):
-            if not fname.endswith("_alignment.json"):
+        for entry in os.listdir(ALIGN_DIR):
+            entry_path = os.path.join(ALIGN_DIR, entry)
+            if not os.path.isdir(entry_path) or entry == "TRASH":
+                continue
+            json_path = os.path.join(entry_path, "alignment.json")
+            if not os.path.isfile(json_path):
                 continue
             try:
-                with open(os.path.join(ALIGN_DIR, fname), "r") as f:
+                with open(json_path, "r") as f:
                     meta = json.load(f)
                 items.append({
-                    "source_audio": meta.get("source_file", fname),
+                    "source_audio": meta.get("source_file", entry),
                     "status": "ready",
                     "version": "standalone",
+                    "folder": entry,
                     "word_count": meta.get("word_count", 0),
                     "timestamp": meta.get("timestamp", ""),
                 })
@@ -1136,10 +1169,50 @@ def list_alignments():
     return jsonify(items)
 
 
+# --- List force-alignment items ---
+@app.route("/api/generation/force-alignment")
+def list_force_alignments():
+    """List all standalone force-alignment results for the history view."""
+    items = []
+    if not os.path.exists(ALIGN_DIR):
+        return jsonify(items)
+    for entry in os.listdir(ALIGN_DIR):
+        entry_path = os.path.join(ALIGN_DIR, entry)
+        if not os.path.isdir(entry_path) or entry == "TRASH":
+            continue
+        json_path = os.path.join(entry_path, "alignment.json")
+        if not os.path.isfile(json_path):
+            continue
+        try:
+            with open(json_path, "r") as f:
+                meta = json.load(f)
+            words = meta.get("alignment", [])
+            duration = round(words[-1]["end"], 2) if words else 0
+            items.append({
+                "type": "force-alignment",
+                "folder": meta.get("folder", entry),
+                "source_file": meta.get("source_file", ""),
+                "transcript": meta.get("transcript", ""),
+                "word_count": meta.get("word_count", len(words)),
+                "duration_seconds": duration,
+                "inference_time": meta.get("inference_time", 0),
+                "timestamp": meta.get("timestamp", ""),
+            })
+        except (json.JSONDecodeError, OSError, IndexError, KeyError):
+            pass
+    items.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+    return jsonify(items)
+
+
 # --- Standalone force alignment ---
 @app.route("/api/force-align", methods=["POST"])
 def force_align():
-    """Run force alignment on an uploaded audio file with transcript text."""
+    """Run force alignment on an uploaded audio file with transcript text.
+
+    Creates a named subfolder under force-alignment/ containing:
+      - The original audio file
+      - alignment.json with word-level timestamps
+    """
     if not _check_alignment_available():
         return jsonify({"error": "Force alignment not available (stable-ts not installed)"}), 503
 
@@ -1150,31 +1223,38 @@ def force_align():
         return jsonify({"error": "No transcript text provided"}), 400
 
     audio_file = request.files["audio"]
-    ext = os.path.splitext(audio_file.filename)[1].lower()
+    original_name = audio_file.filename
+    ext = os.path.splitext(original_name)[1].lower()
     if ext not in (".wav", ".mp3", ".flac", ".ogg"):
         return jsonify({"error": f"Unsupported format: {ext}"}), 400
 
-    # Save uploaded file temporarily
-    import tempfile
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext, dir=ALIGN_DIR)
-    try:
-        audio_file.save(tmp.name)
-        tmp.close()
+    # Create a named subfolder: <audio-name>_<YYYYMMDD_HHMMSS>/
+    safe_name = re.sub(r'[^a-zA-Z0-9]+', '-', os.path.splitext(original_name)[0][:40]).strip('-')
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    folder_name = f"{safe_name}_{timestamp}"
+    job_dir = os.path.join(ALIGN_DIR, folder_name)
+    os.makedirs(job_dir, exist_ok=True)
 
-        # Convert to WAV if needed (alignment needs WAV)
-        wav_path = tmp.name
+    # Save the original audio file into the subfolder
+    audio_path = os.path.join(job_dir, original_name)
+    audio_file.save(audio_path)
+
+    # Convert to WAV if needed (alignment needs WAV)
+    wav_path = audio_path
+    conv_path = None
+    try:
         if ext != ".wav":
             ffmpeg = _find_ffmpeg()
             if not ffmpeg:
                 return jsonify({"error": "ffmpeg required for non-WAV files"}), 400
-            wav_tmp = tmp.name.rsplit(".", 1)[0] + "_conv.wav"
+            conv_path = os.path.join(job_dir, os.path.splitext(original_name)[0] + "_conv.wav")
             result = subprocess.run(
-                [ffmpeg, "-nostdin", "-y", "-i", tmp.name, "-ar", "24000", "-ac", "1", wav_tmp],
+                [ffmpeg, "-nostdin", "-y", "-i", audio_path, "-ar", "24000", "-ac", "1", conv_path],
                 capture_output=True, timeout=60,
             )
             if result.returncode != 0:
                 return jsonify({"error": "Audio conversion failed"}), 500
-            wav_path = wav_tmp
+            wav_path = conv_path
 
         start = time.perf_counter()
         alignment = _run_alignment(wav_path, text)
@@ -1183,50 +1263,51 @@ def force_align():
         if not alignment:
             return jsonify({"error": "Alignment produced no results"}), 500
 
-        # Save result JSON to force-alignment folder
-        safe_name = re.sub(r'[^a-zA-Z0-9]+', '-', os.path.splitext(audio_file.filename)[0][:30]).strip('-')
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        json_name = f"{safe_name}_{timestamp}_alignment.json"
+        # Save alignment JSON into the subfolder
         result_data = {
-            "source_file": audio_file.filename,
+            "source_file": original_name,
+            "folder": folder_name,
             "transcript": text,
             "alignment": alignment,
             "word_count": len(alignment),
             "inference_time": round(elapsed, 3),
             "timestamp": datetime.now().isoformat(),
         }
-        with open(os.path.join(ALIGN_DIR, json_name), "w") as f:
+        with open(os.path.join(job_dir, "alignment.json"), "w") as f:
             json.dump(result_data, f, indent=2)
 
-        logger.success("Force-aligned  {} | {} words in {:.2f}s", audio_file.filename, len(alignment), elapsed)
+        logger.success("Force-aligned  {} | {} words in {:.2f}s -> {}", original_name, len(alignment), elapsed, folder_name)
         return jsonify(result_data)
 
     finally:
-        # Clean up temp files
-        try:
-            os.unlink(tmp.name)
-        except OSError:
-            pass
-        conv_path = tmp.name.rsplit(".", 1)[0] + "_conv.wav"
-        try:
-            os.unlink(conv_path)
-        except OSError:
-            pass
+        # Clean up temp conversion file (keep the original audio)
+        if conv_path:
+            try:
+                os.unlink(conv_path)
+            except OSError:
+                pass
 
 
 # --- Delete audio file (move to TRASH) ---
 @app.route("/api/generation/<filename>", methods=["DELETE"])
 def delete_audio(filename):
     basename = filename.rsplit(".", 1)[0]
-    moved = False
-    # Move all related files (wav, json, enhanced, cleaned, mp3 variants)
-    for f in os.listdir(AUDIO_DIR):
-        if f.startswith(basename) and os.path.isfile(os.path.join(AUDIO_DIR, f)):
-            shutil.move(os.path.join(AUDIO_DIR, f), os.path.join(TRASH_DIR, f))
-            moved = True
-    if moved:
+    job_dir = _tts_job_dir(basename)
+    if os.path.isdir(job_dir):
+        shutil.move(job_dir, os.path.join(TRASH_DIR, basename))
         return jsonify({"status": "deleted", "filename": filename})
     return jsonify({"error": "File not found"}), 404
+
+
+# --- Delete alignment folder (move to TRASH) ---
+@app.route("/api/generation/alignment/<folder>", methods=["DELETE"])
+def delete_alignment(folder):
+    folder = os.path.basename(folder)  # sanitize
+    job_dir = os.path.join(ALIGN_DIR, folder)
+    if os.path.isdir(job_dir):
+        shutil.move(job_dir, os.path.join(ALIGN_TRASH_DIR, folder))
+        return jsonify({"status": "deleted", "folder": folder})
+    return jsonify({"error": "Folder not found"}), 404
 
 
 # --- Open audio folder in OS file manager (with file selected if provided) ---
@@ -1236,7 +1317,9 @@ def open_audio_folder():
     data = request.get_json(silent=True) or {}
     filename = data.get("filename", "")
     filename = os.path.basename(filename) if filename else ""
-    file_path = os.path.join(os.path.abspath(AUDIO_DIR), filename) if filename else ""
+    basename = filename.rsplit(".", 1)[0] if filename else ""
+    job_dir = os.path.abspath(_tts_job_dir(basename)) if basename else ""
+    file_path = os.path.join(job_dir, filename) if job_dir and filename else ""
     folder = os.path.abspath(AUDIO_DIR)
     try:
         if sys.platform == "win32":
@@ -1261,10 +1344,10 @@ def open_audio_folder():
 @app.route("/api/generation", methods=["DELETE"])
 def delete_all_audio():
     count = 0
-    for f in os.listdir(AUDIO_DIR):
-        fp = os.path.join(AUDIO_DIR, f)
-        if os.path.isfile(fp):
-            shutil.move(fp, os.path.join(TRASH_DIR, f))
+    for entry in os.listdir(AUDIO_DIR):
+        entry_path = os.path.join(AUDIO_DIR, entry)
+        if os.path.isdir(entry_path) and entry != "TRASH":
+            shutil.move(entry_path, os.path.join(TRASH_DIR, entry))
             count += 1
     return jsonify({"status": "deleted", "count": count})
 
@@ -1278,7 +1361,7 @@ def get_alignment(filename):
         return jsonify({"error": "Expected .wav filename"}), 400
 
     basename = filename.rsplit(".", 1)[0]
-    json_path = os.path.join(AUDIO_DIR, basename + ".json")
+    json_path = os.path.join(_tts_job_dir(basename), basename + ".json")
 
     if not os.path.exists(json_path):
         return jsonify({"error": "Metadata not found"}), 404
@@ -1350,7 +1433,7 @@ def get_enhance_status(filename):
         return jsonify({"error": "Expected .wav filename"}), 400
 
     basename = filename.rsplit(".", 1)[0]
-    json_path = os.path.join(AUDIO_DIR, basename + ".json")
+    json_path = os.path.join(_tts_job_dir(basename), basename + ".json")
 
     if not os.path.exists(json_path):
         return jsonify({"error": "Metadata not found"}), 404
@@ -1367,7 +1450,7 @@ def get_enhance_status(filename):
     status = metadata.get("enhance_status")
 
     if status == "ready" and metadata.get("enhanced_filename"):
-        enhanced_path = os.path.join(AUDIO_DIR, metadata["enhanced_filename"])
+        enhanced_path = os.path.join(_tts_job_dir(basename), metadata["enhanced_filename"])
         if os.path.exists(enhanced_path):
             return jsonify({
                 "status": "ready",
@@ -1400,7 +1483,7 @@ def get_vad_status(filename):
         return jsonify({"error": "Expected .wav filename"}), 400
 
     basename = filename.rsplit(".", 1)[0]
-    json_path = os.path.join(AUDIO_DIR, basename + ".json")
+    json_path = os.path.join(_tts_job_dir(basename), basename + ".json")
 
     if not os.path.exists(json_path):
         return jsonify({"error": "Metadata not found"}), 404
@@ -1417,7 +1500,7 @@ def get_vad_status(filename):
     status = metadata.get("vad_status")
 
     if status == "ready" and metadata.get("cleaned_filename"):
-        cleaned_path = os.path.join(AUDIO_DIR, metadata["cleaned_filename"])
+        cleaned_path = os.path.join(_tts_job_dir(basename), metadata["cleaned_filename"])
         if os.path.exists(cleaned_path):
             return jsonify({
                 "status": "ready",
@@ -1524,8 +1607,9 @@ def _audio_hash(wav_path):
 def _background_align(basename):
     """Run alignment in background thread, update metadata JSON when done.
     Aligns the original WAV and, if available, the enhanced WAV too."""
-    json_path = os.path.join(AUDIO_DIR, basename + ".json")
-    wav_path = os.path.join(AUDIO_DIR, basename + ".wav")
+    job_dir = _tts_job_dir(basename)
+    json_path = os.path.join(job_dir, basename + ".json")
+    wav_path = os.path.join(job_dir, basename + ".wav")
 
     if not os.path.exists(json_path) or not os.path.exists(wav_path):
         return
@@ -1571,7 +1655,7 @@ def _background_align(basename):
         metadata = _read_metadata(basename)
         enhanced_name = metadata.get("enhanced_filename")
         if enhanced_name:
-            enhanced_path = os.path.join(AUDIO_DIR, enhanced_name)
+            enhanced_path = os.path.join(job_dir, enhanced_name)
             if os.path.exists(enhanced_path):
                 enh_hash = _audio_hash(enhanced_path)
                 need_enhanced = not (
@@ -1649,7 +1733,7 @@ def _run_enhance(wav_path):
 
         basename = os.path.splitext(os.path.basename(wav_path))[0]
         enhanced_name = f"{basename}_enhanced.wav"
-        enhanced_path = os.path.join(AUDIO_DIR, enhanced_name)
+        enhanced_path = os.path.join(os.path.dirname(wav_path), enhanced_name)
         sf.write(enhanced_path, enhanced_np, 48000)
         return enhanced_name
     except Exception as e:
@@ -1660,8 +1744,9 @@ def _run_enhance(wav_path):
 def _background_enhance(basename):
     """Run enhancement in background thread, update metadata JSON when done.
     Automatically chains into silence removal (VAD) when enhancement completes."""
-    json_path = os.path.join(AUDIO_DIR, basename + ".json")
-    wav_path = os.path.join(AUDIO_DIR, basename + ".wav")
+    job_dir = _tts_job_dir(basename)
+    json_path = os.path.join(job_dir, basename + ".json")
+    wav_path = os.path.join(job_dir, basename + ".wav")
 
     if not os.path.exists(json_path) or not os.path.exists(wav_path):
         return
@@ -1673,7 +1758,7 @@ def _background_enhance(basename):
         # Skip if already enhanced and file exists
         if (metadata.get("enhance_status") == "ready"
                 and metadata.get("enhanced_filename")
-                and os.path.exists(os.path.join(AUDIO_DIR, metadata["enhanced_filename"]))):
+                and os.path.exists(os.path.join(job_dir, metadata["enhanced_filename"]))):
             # Still chain VAD if not done yet
             if metadata.get("vad_status") not in ("ready", "cleaning"):
                 _start_vad(basename)
@@ -1808,7 +1893,7 @@ def _run_silence_removal(wav_path, max_silence_ms=500):
         cleaned = np.concatenate(chunks)
         basename = os.path.splitext(os.path.basename(wav_path))[0]
         cleaned_name = f"{basename}_cleaned.wav"
-        cleaned_path = os.path.join(AUDIO_DIR, cleaned_name)
+        cleaned_path = os.path.join(os.path.dirname(wav_path), cleaned_name)
         sf.write(cleaned_path, cleaned, orig_sr)
         return cleaned_name
     except Exception as e:
@@ -1864,16 +1949,17 @@ def _run_loudnorm(wav_path):
 def _background_vad(basename, max_silence_ms=500):
     """Run silence removal in background thread, update metadata JSON when done.
     Also runs loudnorm on the cleaned file if ffmpeg is available."""
-    json_path = os.path.join(AUDIO_DIR, basename + ".json")
+    job_dir = _tts_job_dir(basename)
+    json_path = os.path.join(job_dir, basename + ".json")
     # Prefer enhanced audio if available, otherwise use original
     with open(json_path, "r") as f:
         metadata = json.load(f)
 
     enhanced_name = metadata.get("enhanced_filename")
-    if enhanced_name and os.path.exists(os.path.join(AUDIO_DIR, enhanced_name)):
-        wav_path = os.path.join(AUDIO_DIR, enhanced_name)
+    if enhanced_name and os.path.exists(os.path.join(job_dir, enhanced_name)):
+        wav_path = os.path.join(job_dir, enhanced_name)
     else:
-        wav_path = os.path.join(AUDIO_DIR, basename + ".wav")
+        wav_path = os.path.join(job_dir, basename + ".wav")
 
     if not os.path.exists(json_path) or not os.path.exists(wav_path):
         return
@@ -1885,7 +1971,7 @@ def _background_vad(basename, max_silence_ms=500):
         # Skip if already cleaned and file exists
         if (metadata.get("vad_status") == "ready"
                 and metadata.get("cleaned_filename")
-                and os.path.exists(os.path.join(AUDIO_DIR, metadata["cleaned_filename"]))):
+                and os.path.exists(os.path.join(job_dir, metadata["cleaned_filename"]))):
             return
 
         _update_metadata(basename, {"vad_status": "cleaning"})
@@ -1896,7 +1982,7 @@ def _background_vad(basename, max_silence_ms=500):
             # Run loudnorm on the cleaned file
             _update_metadata(basename, {"vad_status": "normalizing"})
 
-            cleaned_path = os.path.join(AUDIO_DIR, cleaned_name)
+            cleaned_path = os.path.join(job_dir, cleaned_name)
             if _run_loudnorm(cleaned_path):
                 logger.success("Normalized  {}", cleaned_name)
             else:
@@ -1939,8 +2025,9 @@ def _start_vad(basename, max_silence_ms=500):
 def check_mp3(filename):
     if not filename.endswith(".wav"):
         return jsonify({"exists": False})
+    folder = _folder_for_file(filename)
     mp3_name = filename.rsplit(".", 1)[0] + ".mp3"
-    mp3_path = os.path.join(AUDIO_DIR, mp3_name)
+    mp3_path = os.path.join(_tts_job_dir(folder), mp3_name)
     return jsonify({"exists": os.path.exists(mp3_path)})
 
 
@@ -1949,11 +2036,13 @@ def check_mp3(filename):
 def serve_mp3(filename):
     if not filename.endswith(".wav"):
         return jsonify({"error": "Only .wav files can be converted"}), 400
+    folder = _folder_for_file(filename)
     mp3_name = filename.rsplit(".", 1)[0] + ".mp3"
-    mp3_path = os.path.join(AUDIO_DIR, mp3_name)
+    job_dir = _tts_job_dir(folder)
+    mp3_path = os.path.join(job_dir, mp3_name)
     if not os.path.exists(mp3_path):
         return jsonify({"error": "MP3 not found — convert first"}), 404
-    return send_from_directory(AUDIO_DIR, mp3_name, as_attachment=True)
+    return send_from_directory(job_dir, mp3_name, as_attachment=True)
 
 
 # --- Convert WAV to MP3 with SSE progress ---
@@ -1961,12 +2050,14 @@ def serve_mp3(filename):
 def convert_to_mp3(filename):
     if not filename.endswith(".wav"):
         return jsonify({"error": "Only .wav files can be converted"}), 400
-    wav_path = os.path.join(AUDIO_DIR, filename)
+    folder = _folder_for_file(filename)
+    job_dir = _tts_job_dir(folder)
+    wav_path = os.path.join(job_dir, filename)
     if not os.path.exists(wav_path):
         return jsonify({"error": "File not found"}), 404
 
     mp3_name = filename.rsplit(".", 1)[0] + ".mp3"
-    mp3_path = os.path.join(AUDIO_DIR, mp3_name)
+    mp3_path = os.path.join(job_dir, mp3_name)
 
     # Already converted — instant done
     if os.path.exists(mp3_path):
@@ -2034,7 +2125,13 @@ def convert_to_mp3(filename):
     )
 
 
-# --- Serve audio files ---
+# --- Serve force-alignment audio files ---
+@app.route("/generation/force-alignment/<path:filename>")
+def serve_alignment_audio(filename):
+    return send_from_directory(ALIGN_DIR, filename)
+
+
+# --- Serve TTS audio files ---
 @app.route("/generation/<path:filename>")
 def serve_audio(filename):
     return send_from_directory(AUDIO_DIR, filename)
