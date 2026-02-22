@@ -30,9 +30,28 @@ logger.remove()  # Remove default stderr handler
 LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
-# Console: INFO and above, colored
-logger.add(sys.stderr, level="INFO",
-           format="<green>{time:HH:mm:ss}</green> | <level>{level:<7}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>")
+_LEVEL_ICONS = {
+    "TRACE": ".",
+    "DEBUG": "-",
+    "INFO": "*",
+    "SUCCESS": "+",
+    "WARNING": "!",
+    "ERROR": "x",
+    "CRITICAL": "X",
+}
+
+
+def _console_format(record):
+    icon = _LEVEL_ICONS.get(record["level"].name, "\u25cf")
+    return (
+        f"<dim>{record['time']:HH:mm:ss}</dim> "
+        f"<level>{icon}</level> "
+        f"<level>{record['message']}</level>\n"
+    )
+
+
+# Console: INFO and above, clean minimal format
+logger.add(sys.stderr, level="INFO", format=_console_format, colorize=True)
 
 # File: DEBUG and above, rotated daily, kept 7 days
 logger.add(os.path.join(LOG_DIR, "kittentts_{time:YYYY-MM-DD}.log"),
@@ -167,9 +186,10 @@ def generate_filename(prompt: str) -> str:
 
 
 def clean_for_tts(text: str) -> str:
-    """Strip markdown formatting, URLs, and excess whitespace before TTS."""
+    """Strip markdown formatting, URLs, brackets, and excess whitespace before TTS."""
     text = re.sub(r"[*_#`~]", "", text)       # markdown chars
     text = re.sub(r"https?://\S+", "link", text)  # URLs
+    text = re.sub(r"[\[\]]", "", text)         # strip bracket wrappers
     text = re.sub(r"\s+", " ", text)           # collapse whitespace
     return text.strip()
 
@@ -335,105 +355,118 @@ def normalize_for_tts(text: str) -> str:
 # Sentence splitting & audio concatenation for chunked generation
 # ---------------------------------------------------------------------------
 
-_SENTENCE_ABBREVS = {
-    'Dr', 'Mr', 'Mrs', 'Ms', 'Prof', 'St', 'Ave', 'Blvd', 'Dept',
-    'Est', 'etc', 'vs', 'approx', 'Jr', 'Sr', 'Gen', 'Gov', 'Sgt',
-    'Cpl', 'Pvt', 'Lt', 'Capt', 'Maj', 'Col', 'Inc', 'Corp', 'Ltd',
-    'Co', 'Jan', 'Feb', 'Mar', 'Apr', 'Jun', 'Jul', 'Aug', 'Sep',
-    'Oct', 'Nov', 'Dec', 'Fig', 'Vol', 'Ref', 'no', 'No',
-}
-_ABBREV_PATTERN = re.compile(
-    r'\b(' + '|'.join(re.escape(a) for a in _SENTENCE_ABBREVS) + r')\.',
-    re.IGNORECASE,
-)
+def tts_breathing_blocks(
+    text: str,
+    min_chars: int = 150,
+    max_chars: int = 200,
+) -> list[str]:
+    """Split text into breathing-sized blocks for TTS chunked generation.
 
-MAX_SENTENCE_LEN = 150
-
-
-def split_into_sentences(text: str, max_len: int = MAX_SENTENCE_LEN) -> list[str]:
-    """Split text into sentence-length chunks suitable for TTS.
-
-    1. Protect abbreviations, ellipses, and decimal numbers from splitting.
-    2. Split on sentence-ending punctuation (.!?) followed by whitespace.
-    3. Sub-split any chunk exceeding *max_len* on ; then , then word boundaries.
-    4. Ensure every chunk ends with punctuation.
+    Each block is wrapped in [...] brackets which act as pacing cues for the
+    TTS model. Blocks aim for *min_chars*–*max_chars*, preferring sentence
+    boundaries, then comma/semicolon boundaries, then word boundaries.
     """
     if not text or not text.strip():
         return []
 
-    # --- Protect patterns that should NOT be treated as sentence boundaries ---
-    ABBREV_PLACEHOLDER = '\x00'
-    ELLIPSIS_PLACEHOLDER = '\x01'
-    DECIMAL_PLACEHOLDER = '\x02'
+    # 1) Normalize quotes, dashes, ellipses, and whitespace
+    text = text.replace("\u201c", '"').replace("\u201d", '"')
+    text = text.replace("\u2018", "'").replace("\u2019", "'")
+    text = text.replace("\u2014", ". ").replace("\u2013", "-").replace("\u2026", "...")
+    text = re.sub(r"\s+", " ", text).strip()
 
-    # Protect abbreviations: "Dr." → "Dr\x00"
-    protected = _ABBREV_PATTERN.sub(lambda m: m.group(1) + ABBREV_PLACEHOLDER, text)
-    # Protect ellipsis: "..." → "\x01"
-    protected = protected.replace('...', ELLIPSIS_PLACEHOLDER)
-    # Protect decimal numbers: "3.14" → "3\x0214"
-    protected = re.sub(r'(\d)\.(\d)', r'\1' + DECIMAL_PLACEHOLDER + r'\2', protected)
+    # 2) Split into sentences (keeps punctuation)
+    sentences = re.findall(r".+?(?:\.{3}|[.!?])(?:\s+|$)", text)
+    if not sentences:
+        sentences = [text]
 
-    # --- Split on sentence-ending punctuation followed by space or end-of-string ---
-    raw_parts = re.split(r'(?<=[.!?])\s+', protected)
+    # 3) Build blocks aiming for min..max chars, preferring sentence boundaries
+    blocks: list[str] = []
+    cur = ""
 
-    # --- Restore placeholders ---
-    def restore(s: str) -> str:
-        s = s.replace(ABBREV_PLACEHOLDER, '.')
-        s = s.replace(ELLIPSIS_PLACEHOLDER, '...')
-        s = s.replace(DECIMAL_PLACEHOLDER, '.')
-        return s.strip()
+    def flush():
+        nonlocal cur
+        if cur.strip():
+            blocks.append(cur.strip())
+        cur = ""
 
-    sentences = [restore(p) for p in raw_parts if p.strip()]
-
-    # --- Sub-split long sentences ---
-    def _subsplit(s: str, limit: int) -> list[str]:
-        if len(s) <= limit:
-            return [s]
-        # Try splitting on semicolons
-        parts = [p.strip() for p in s.split(';') if p.strip()]
-        if len(parts) > 1 and all(len(p) <= limit for p in parts):
-            return parts
-        # Try splitting on commas
-        result = []
-        for part in parts:
-            if len(part) <= limit:
-                result.append(part)
-            else:
-                sub = [p.strip() for p in part.split(',') if p.strip()]
-                if len(sub) > 1:
-                    result.extend(sub)
-                else:
-                    result.append(part)
-        # Final pass: word-boundary split for anything still too long
-        final = []
-        for part in result:
-            if len(part) <= limit:
-                final.append(part)
-            else:
-                words = part.split()
-                buf = ''
-                for w in words:
-                    if buf and len(buf) + 1 + len(w) > limit:
-                        final.append(buf)
-                        buf = w
-                    else:
-                        buf = (buf + ' ' + w) if buf else w
-                if buf:
-                    final.append(buf)
-        return final
-
-    chunks = []
     for s in sentences:
-        chunks.extend(_subsplit(s, max_len))
-
-    # --- Ensure punctuation on every chunk ---
-    def _ensure_punct(s: str) -> str:
         s = s.strip()
-        if s and s[-1] not in '.!?,;:':
-            s += ','
-        return s
+        if not s:
+            continue
 
-    return [_ensure_punct(c) for c in chunks if c.strip()]
+        if not cur:
+            cur = s
+            continue
+
+        if len(cur) + 1 + len(s) <= max_chars:
+            cur = f"{cur} {s}"
+            continue
+
+        if len(cur) >= min_chars:
+            flush()
+            cur = s
+            continue
+
+        # Split on commas/semicolons/colons to fill the block without exceeding max
+        parts = re.split(r"(?<=[,;:])\s+", s)
+        for p in parts:
+            p = p.strip()
+            if not p:
+                continue
+            if not cur:
+                cur = p
+                continue
+            if len(cur) + 1 + len(p) <= max_chars:
+                cur = f"{cur} {p}"
+            else:
+                flush()
+                cur = p
+
+    flush()
+
+    # 4) Post-process: merge any block shorter than min_block with its neighbor.
+    #    Prevents tiny blocks that cause TTS cut-off and pop artifacts.
+    min_block = 80
+    hard_limit = max_chars + min_block  # allow slight overflow vs tiny blocks
+
+    changed = True
+    while changed:
+        changed = False
+        i = 0
+        while i < len(blocks):
+            if len(blocks[i]) >= min_block:
+                i += 1
+                continue
+            # Try forward merge (into next block)
+            if i + 1 < len(blocks):
+                merged = f"{blocks[i]} {blocks[i + 1]}"
+                if len(merged) <= hard_limit:
+                    blocks[i] = merged
+                    blocks.pop(i + 1)
+                    changed = True
+                    if len(blocks[i]) >= min_block:
+                        i += 1
+                    continue
+            # Try backward merge (into previous block)
+            if i > 0:
+                merged = f"{blocks[i - 1]} {blocks[i]}"
+                if len(merged) <= hard_limit:
+                    blocks[i - 1] = merged
+                    blocks.pop(i)
+                    changed = True
+                    continue
+            i += 1  # unmergeable, leave as-is
+
+    return blocks
+
+
+def format_breathing_blocks(text: str, min_chars: int = 150, max_chars: int = 200) -> str:
+    """Format text into bracket-wrapped breathing blocks for display/preview."""
+    blocks = tts_breathing_blocks(text, min_chars, max_chars)
+    if not blocks:
+        return text.strip()
+    return "\n\n".join(f"[{b}]" for b in blocks)
 
 
 def pad_audio(audio, sample_rate=24000, pad_ms=50):
@@ -524,9 +557,9 @@ def load_model(model_id: str):
 
     with model_lock:
         if model_id not in loaded_models:
-            logger.info("Loading model {} ({})", model_id, repo)
+            logger.info("Loading model \033[1m{}\033[0m ...", model_id)
             loaded_models[model_id] = KittenTTS(repo)
-            logger.info("Model {} loaded successfully", model_id)
+            logger.success("Model \033[1m{}\033[0m ready", model_id)
     return loaded_models[model_id]
 
 
@@ -609,8 +642,14 @@ def normalize_text():
     text = data.get("text", "")
     if not text.strip():
         return jsonify({"error": "No text provided"}), 400
-    normalized = normalize_for_tts(text)
-    return jsonify({"original": text, "normalized": normalized})
+    # If already bracket-formatted, normalize each block individually
+    pre_blocks = re.findall(r'\[([^\[\]]+)\]', text)
+    if pre_blocks and len(pre_blocks) >= 2:
+        formatted = "\n\n".join(f"[{normalize_for_tts(b)}]" for b in pre_blocks if b.strip())
+    else:
+        normalized = normalize_for_tts(text)
+        formatted = format_breathing_blocks(normalized)
+    return jsonify({"original": text, "normalized": formatted})
 
 
 # --- Models ---
@@ -744,7 +783,7 @@ def _background_chunked_generate(job_id, model_id, voice, sentences, speed,
         total = len(sentences)
         total_inference = 0.0
 
-        for i, sentence in enumerate(sentences):
+        for i, block in enumerate(sentences):
             # Check if abort was requested
             if generation_jobs[job_id].get("abort"):
                 q.put({"phase": "aborted"})
@@ -753,14 +792,12 @@ def _background_chunked_generate(job_id, model_id, voice, sentences, speed,
                 return
 
             q.put({"phase": "generating", "chunk": i + 1, "total": total,
-                    "sentence": sentence})
+                    "sentence": block})
 
-            # Preprocess the same way KittenTTS.generate() does internally
-            processed = inner.preprocessor(sentence)
-            # Ensure trailing punctuation
+            # Wrap in brackets for TTS pacing and preprocess
+            bracketed = f"[{block}]"
+            processed = inner.preprocessor(bracketed)
             processed = processed.strip()
-            if processed and processed[-1] not in '.!?,;:':
-                processed += ','
 
             start = time.perf_counter()
             with generation_inference_lock:
@@ -785,6 +822,7 @@ def _background_chunked_generate(job_id, model_id, voice, sentences, speed,
         info = sf.info(wav_path)
         duration_generated = info.duration
         rtf = total_inference / duration_generated if duration_generated > 0 else 0
+        logger.success("Generated  {:.1f}s audio in {:.2f}s | RTF {:.2f} | {} chunks", duration_generated, total_inference, rtf, total)
 
         words = len(prompt.split())
         approx_tokens = int(words * 1.3)
@@ -872,13 +910,26 @@ def generate():
                 return jsonify({"error": "A generation is already in progress. Please wait or abort."}), 429
 
     m = load_model(model_id)
-    logger.info("Generate request: model={}, voice={}, prompt_len={}", model_id, voice, len(prompt))
+    logger.info("Generate  \033[1m{}\033[0m | {} | {} chars", model_id, voice, len(prompt))
 
-    tts_prompt = clean_for_tts(prompt)
-    sentences = split_into_sentences(tts_prompt)
+    # If text is already bracket-formatted [block1]\n\n[block2], use those blocks directly
+    pre_blocks = re.findall(r'\[([^\[\]]+)\]', prompt)
+    if pre_blocks and len(pre_blocks) >= 2:
+        # Already formatted — clean each block individually (strip markdown/URLs, NOT brackets)
+        blocks = []
+        for b in pre_blocks:
+            cleaned = re.sub(r"[*_#`~]", "", b)
+            cleaned = re.sub(r"https?://\S+", "link", cleaned)
+            cleaned = re.sub(r"\s+", " ", cleaned).strip()
+            if cleaned:
+                blocks.append(cleaned)
+        tts_prompt = " ".join(blocks)
+    else:
+        tts_prompt = clean_for_tts(prompt)
+        blocks = tts_breathing_blocks(tts_prompt)
 
-    # --- Multi-sentence: chunked background generation with SSE progress ---
-    if len(sentences) > 1:
+    # --- Multi-block: chunked background generation with SSE progress ---
+    if len(blocks) > 1:
         _cleanup_old_jobs()
         job_id = uuid.uuid4().hex[:12]
         basename = generate_filename(prompt)
@@ -892,7 +943,7 @@ def generate():
             }
         t = threading.Thread(
             target=_background_chunked_generate,
-            args=(job_id, model_id, voice, sentences, speed,
+            args=(job_id, model_id, voice, blocks, speed,
                   max_silence_ms, prompt, basename),
             daemon=True,
         )
@@ -900,18 +951,21 @@ def generate():
         return jsonify({
             "job_id": job_id,
             "status": "chunking",
-            "total_chunks": len(sentences),
-            "sentences": sentences,
+            "total_chunks": len(blocks),
+            "sentences": blocks,
         }), 202
 
-    # --- Single sentence: synchronous fast path (unchanged) ---
+    # --- Single block: synchronous fast path ---
+    # Wrap in brackets for TTS pacing
+    single_block = blocks[0] if blocks else tts_prompt
+    tts_input = f"[{single_block}]"
     words = len(tts_prompt.split())
     approx_tokens = int(words * 1.3)
 
     start = time.perf_counter()
     try:
         with generation_inference_lock:
-            audio = m.generate(tts_prompt, voice=voice, speed=speed)
+            audio = m.generate(tts_input, voice=voice, speed=speed)
     except Exception as e:
         logger.exception("TTS inference failed")
         return jsonify({"error": f"Generation failed: {e}"}), 500
@@ -927,8 +981,7 @@ def generate():
     json_name = f"{basename}.json"
 
     sf.write(os.path.join(AUDIO_DIR, wav_name), audio, 24000)
-    logger.info("Generated {} ({:.1f}s audio in {:.2f}s, RTF={:.4f})",
-                wav_name, duration_generated, inference_time, rtf)
+    logger.success("Generated  {:.1f}s audio in {:.2f}s | RTF {:.2f}", duration_generated, inference_time, rtf)
 
     metadata = {
         "filename": wav_name,
@@ -1368,8 +1421,10 @@ def _background_align(basename):
                     "audio_hash": current_hash,
                     "alignment_version": ALIGNMENT_VERSION,
                 })
+                logger.success("Aligned  {} | {} words", basename, len(alignment))
             else:
                 _update_metadata(basename, {"alignment_status": "failed"})
+                logger.warning("Alignment produced no results for {}", basename)
 
         # --- Align enhanced WAV (if it exists) ---
         # Re-read metadata: enhancement may have finished since we started
@@ -1493,8 +1548,10 @@ def _background_enhance(basename):
                 "enhance_status": "ready",
                 "enhanced_filename": enhanced_name,
             })
+            logger.success("Enhanced  {}", basename)
         else:
             _update_metadata(basename, {"enhance_status": "failed"})
+            logger.warning("Enhancement produced no output for {}", basename)
 
         # Chain: align the enhanced file + start silence removal
         _start_alignment(basename)
@@ -1701,7 +1758,7 @@ def _background_vad(basename, max_silence_ms=500):
 
             cleaned_path = os.path.join(AUDIO_DIR, cleaned_name)
             if _run_loudnorm(cleaned_path):
-                logger.info("Normalized {}", cleaned_name)
+                logger.success("Normalized  {}", cleaned_name)
             else:
                 logger.warning("Loudnorm skipped for {} (ffmpeg unavailable or failed)", cleaned_name)
 
@@ -1709,8 +1766,10 @@ def _background_vad(basename, max_silence_ms=500):
                 "vad_status": "ready",
                 "cleaned_filename": cleaned_name,
             })
+            logger.success("Cleaned  {}", basename)
         else:
             _update_metadata(basename, {"vad_status": "failed"})
+            logger.warning("Silence removal produced no output for {}", basename)
 
     except Exception as e:
         logger.exception("Background silence removal failed for {}", basename)
@@ -1851,5 +1910,16 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     port = args.port if args.port else find_available_port(5000)
-    logger.info("KittenTTS Studio running on http://localhost:{}", port)
+
+    # Startup banner (ASCII-safe for Windows cp1252 console)
+    print()
+    print("  \033[96m+------------------------------------------+\033[0m")
+    print("  \033[96m|\033[0m  \033[1mKittenTTS Studio\033[0m                       \033[96m|\033[0m")
+    print("  \033[96m|\033[0m                                          \033[96m|\033[0m")
+    print(f"  \033[96m|\033[0m  \033[92m>\033[0m  http://localhost:{port:<24}\033[96m|\033[0m")
+    print(f"  \033[96m|\033[0m  \033[90m-\033[0m  Models:  {len(MODELS)} available               \033[96m|\033[0m")
+    print(f"  \033[96m|\033[0m  \033[90m-\033[0m  Voices:  {len(VOICES)} available               \033[96m|\033[0m")
+    print("  \033[96m+------------------------------------------+\033[0m")
+    print()
+
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

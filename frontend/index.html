@@ -395,10 +395,6 @@
       background: linear-gradient(135deg, #C4B5FD 0%, #A78BFA 50%, #7C3AED 100%) !important;
     }
 
-    .gen-btn.step-align {
-      background: linear-gradient(135deg, #60A5FA 0%, #3B82F6 50%, #2563EB 100%) !important;
-    }
-
     .gen-btn.step-done {
       background: linear-gradient(135deg, #4ECDC4 0%, #2FB8AE 100%) !important;
     }
@@ -1142,6 +1138,12 @@
                 onmouseout="this.style.color='var(--text-muted)';this.style.borderColor='var(--border)';this.style.background='transparent'">
                 Format
               </button>
+              <button onclick="copyPromptPlain()" title="Copy plain text (without brackets)"
+                style="padding:2px 8px;border-radius:5px;font-size:9px;font-weight:600;font-family:'JetBrains Mono',monospace;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;transition:all 0.2s"
+                onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)';this.style.background='rgba(78,205,196,0.06)'"
+                onmouseout="this.style.color='var(--text-muted)';this.style.borderColor='var(--border)';this.style.background='transparent'">
+                Copy
+              </button>
             </div>
             <div class="flex items-center gap-1" style="color:var(--text-muted)">
               <kbd
@@ -1174,10 +1176,6 @@
             <div class="step-line" data-line="4"></div>
             <div class="step-node" data-step="5" data-state="pending">
               <div class="step-dot">5</div><span class="step-label">MP3</span>
-            </div>
-            <div class="step-line" data-line="5"></div>
-            <div class="step-node" data-step="6" data-state="pending">
-              <div class="step-dot">6</div><span class="step-label">Align</span>
             </div>
           </div>
           <div id="chunk-progress" style="display:none;margin-top:10px">
@@ -1657,6 +1655,12 @@
       } catch (e) { toast(e.message || 'Normalization failed', 'error'); }
       finally { btn.disabled = false; btn.textContent = orig; }
     }
+    function copyPromptPlain() {
+      const text = $('#prompt-input').value.trim();
+      if (!text) { toast('Nothing to copy', 'error'); return; }
+      const plain = text.replace(/[\[\]]/g, '').replace(/\n{2,}/g, ' ').replace(/\s+/g, ' ').trim();
+      navigator.clipboard.writeText(plain).then(() => toast('Plain text copied')).catch(() => toast('Copy failed', 'error'));
+    }
 
     // ======================================================================
     // Model Select
@@ -1755,20 +1759,19 @@
         l.classList.toggle('active', li === step);
       });
       const btn = $('#generate-btn'); const label = $('#gen-label'); const sp = $('#gen-spinner');
-      btn.classList.remove('step-enhance', 'step-vad', 'step-loudnorm', 'step-mp3', 'step-align', 'step-done');
+      btn.classList.remove('step-enhance', 'step-vad', 'step-loudnorm', 'step-mp3', 'step-done');
       sp.style.display = 'inline-block'; sp.classList.remove('hidden');
       if (step === 1) { label.textContent = 'Generating...'; }
       else if (step === 2) { label.textContent = 'Enhancing...'; btn.classList.add('step-enhance'); }
       else if (step === 3) { label.textContent = 'Removing Silence...'; btn.classList.add('step-vad'); }
       else if (step === 4) { label.textContent = 'Normalizing...'; btn.classList.add('step-loudnorm'); }
       else if (step === 5) { label.textContent = 'Converting MP3...'; btn.classList.add('step-mp3'); }
-      else if (step === 6) { label.textContent = 'Aligning Words...'; btn.classList.add('step-align'); }
     }
     function setStepDone() {
       document.querySelectorAll('.step-node').forEach(n => n.dataset.state = 'done');
       document.querySelectorAll('.step-line').forEach(l => { l.classList.add('done'); l.classList.remove('active'); });
       const btn = $('#generate-btn');
-      btn.classList.remove('step-enhance', 'step-vad', 'step-loudnorm', 'step-mp3', 'step-align');
+      btn.classList.remove('step-enhance', 'step-vad', 'step-loudnorm', 'step-mp3');
       btn.classList.add('step-done');
       $('#gen-label').textContent = 'Done!';
       $('#gen-spinner').style.display = 'none';
@@ -1787,7 +1790,7 @@
       $('#abort-btn').style.display = on ? 'flex' : 'none';
       if (!on && STATE.processingStep === 0) {
         $('#gen-label').textContent = 'Generate Audio';
-        btn.classList.remove('step-enhance', 'step-vad', 'step-loudnorm', 'step-mp3', 'step-align', 'step-done');
+        btn.classList.remove('step-enhance', 'step-vad', 'step-loudnorm', 'step-mp3', 'step-done');
       }
       const sp = $('#gen-spinner');
       if (!on && STATE.processingStep === 0) { sp.style.display = 'none'; sp.classList.add('hidden'); }
@@ -1869,18 +1872,7 @@
         if (STATE.enhanceAvailable) { setStepActive(2); await pollUntilDone(`/api/audio/${result.filename}/enhance-status`, 'ready', 'enhancing', 1500, null, sig); }
         if (STATE.vadAvailable) { setStepActive(3); await pollUntilDone(`/api/audio/${result.filename}/vad-status`, 'ready', 'cleaning', 1500, (data) => { if (data.status === 'normalizing' && STATE.processingStep === 3) setStepActive(4); }, sig); }
         if (STATE.ffmpeg && STATE.nowPlaying && STATE.nowPlaying._cleanedFilename) { setStepActive(5); await autoConvertMp3(STATE.nowPlaying._cleanedFilename); STATE.nowPlaying._cleanedMp3 = true; updateCleanedMp3Btn(); }
-        if (STATE.alignmentAvailable) {
-          setStepActive(6); await pollUntilDone(`/api/audio/${result.filename}/alignment`, 'ready', 'aligning', 2000, (data) => {
-            if (data.elapsed != null) {
-              const el = Math.round(data.elapsed);
-              const mm = String(Math.floor(el / 60)).padStart(2, '0');
-              const ss = String(el % 60).padStart(2, '0');
-              let label = `Aligning… ${mm}:${ss}`;
-              if (data.audio_duration) { const pct = Math.min(95, Math.round((data.elapsed / (data.audio_duration * 1.5)) * 100)); label += ` (~${pct}%)`; }
-              $('#gen-label').textContent = label;
-            }
-          }, sig);
-        }
+        // Alignment runs in background on the backend — no need to block the UI
         STATE.generateAbort = null;
         setStepDone(); pollVersionStatuses(result.filename); await loadHistory();
       } catch (e) { if (e.name === 'AbortError') { hideStepper(); setGenerating(false); return; } toast(e.message || 'Generation failed', 'error'); hideStepper(); setGenerating(false); }
@@ -2227,7 +2219,7 @@
         <button onclick="toggleHistText(this)" title="View full text" style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;transition:all 0.2s;flex-shrink:0" onmouseover="this.style.color='var(--accent)';this.style.background='rgba(78,205,196,0.06)'" onmouseout="this.style.color='var(--text-muted)';this.style.background='transparent'">
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="8" y1="9" x2="10" y2="9"/></svg>
         </button>
-        <button onclick="copyHistPrompt(${i})" title="Copy text" style="width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;transition:all 0.2s;flex-shrink:0" onmouseover="this.style.color='var(--accent)';this.style.background='rgba(78,205,196,0.06)'" onmouseout="this.style.color='var(--text-muted)';this.style.background='transparent'">
+        <button onclick="copyHistPrompt(${i})" title="Load into prompt" style="width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;transition:all 0.2s;flex-shrink:0" onmouseover="this.style.color='var(--accent)';this.style.background='rgba(78,205,196,0.06)'" onmouseout="this.style.color='var(--text-muted)';this.style.background='transparent'">
           <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
         </button>
         ${STATE.alignmentAvailable ? `<span class="align-dot ${h.alignment_status || 'pending'}" title="${h.alignment_status === 'ready' ? 'Aligned' : h.alignment_status === 'aligning' ? 'Aligning…' : h.alignment_status === 'failed' ? 'Alignment failed' : 'Pending'}"></span>` : ''}
@@ -2250,7 +2242,10 @@
     function copyHistPrompt(idx) {
       if (idx < 0 || idx >= STATE.history.length) return;
       const text = STATE.history[idx].prompt || '';
-      navigator.clipboard.writeText(text).then(() => toast('Copied to clipboard')).catch(() => toast('Copy failed', 'error'));
+      $('#prompt-input').value = text;
+      updateCounts();
+      localStorage.setItem('kittenTTS-prompt', text);
+      toast('Loaded into prompt');
     }
     function timeAgo(ts) {
       const d = (Date.now() - new Date(ts).getTime()) / 1000;
