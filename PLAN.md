@@ -1,12 +1,12 @@
-# KittenTTS-Studio — Project Status & Session Log
+# KittenTTS Studio -- Project Status & Architecture
 
 **Repository:** https://github.com/Lacarte/KittenTTS-Studio
 **Branch:** main
 
-## Current State (2026-02-21)
+## Current State (2026-02-22)
 
 ### Latest Commit
-- `1794108` — `feat: initial KittenTTS Web Studio application` (10 files, 4,541 lines)
+- `2a4319a` -- `feat: UI/UX audit improvements and force-alignment karaoke`
 
 ---
 
@@ -15,36 +15,39 @@
 ### Processing Pipeline (per generation)
 ```
 User clicks Generate
-  │
-  ├─ Step 1: Generate audio (KittenTTS) → saves WAV + JSON
-  │    ├─ Start alignment thread (stable-ts, parallel)
-  │    └─ Start enhancement thread (LavaSR)
-  │
-  ├─ Step 2: Enhancement (LavaSR) → saves _enhanced.wav (48kHz)
-  │    └─ Chains into VAD when done
-  │
-  ├─ Step 3: Silence Removal (Silero VAD) → saves _cleaned.wav
-  │    └─ Uses enhanced audio if available, preserves gaps ≤ max_silence_ms
-  │
-  ├─ Step 4: Loudnorm (ffmpeg) → overwrites _cleaned.wav in-place
-  │    └─ Runs inside VAD background thread after silence removal
-  │
-  └─ Step 5: MP3 Conversion (ffmpeg, frontend-driven) → saves _cleaned.mp3
+  |
+  +-- Step 1: Generate audio (KittenTTS) -> saves WAV + JSON
+  |     +-- Breathing-block chunking for long texts (150-200 char blocks)
+  |     +-- Crossfade concatenation of audio chunks
+  |     +-- Start alignment thread (stable-ts, parallel)
+  |     +-- Start enhancement thread (LavaSR)
+  |
+  +-- Step 2: Enhancement (LavaSR) -> saves _enhanced.wav (48kHz)
+  |     +-- Chains into VAD when done
+  |
+  +-- Step 3: Silence Removal (Silero VAD) -> saves _cleaned.wav
+  |     +-- Uses enhanced audio if available, preserves gaps <= max_silence_ms
+  |
+  +-- Step 4: Loudnorm (ffmpeg) -> overwrites _cleaned.wav in-place
+  |     +-- Runs inside VAD background thread after silence removal
+  |
+  +-- Step 5: MP3 Conversion (ffmpeg, frontend-driven) -> saves _cleaned.mp3
 ```
 
-### Audio File Variants
+### Audio File Variants (per-generation subfolder)
 ```
 generated_assets/
   tts/
-    some-text_20260221_143052.wav          # Original (24kHz)
-    some-text_20260221_143052.json         # Metadata
-    some-text_20260221_143052_enhanced.wav # Enhanced (48kHz, LavaSR)
-    some-text_20260221_143052_cleaned.wav  # Silence removed + loudnorm
-    some-text_20260221_143052_cleaned.mp3  # MP3 of cleaned version
-    TRASH/                                 # Soft-deleted TTS files
+    some-text_20260221_143052/
+      some-text_20260221_143052.wav          # Original (24kHz)
+      some-text_20260221_143052.json         # Metadata
+      some-text_20260221_143052_enhanced.wav # Enhanced (48kHz, LavaSR)
+      some-text_20260221_143052_cleaned.wav  # Silence removed + loudnorm
+      some-text_20260221_143052_cleaned.mp3  # MP3 of cleaned version
+    TRASH/                                   # Soft-deleted TTS files
   force-alignment/
-    audio-name_20260222_alignment.json     # Standalone alignment results
-    TRASH/                                 # Soft-deleted alignment files
+    audio-name_20260222_alignment.json       # Standalone alignment results
+    TRASH/                                   # Soft-deleted alignment files
 ```
 
 ### Player Version Selector
@@ -54,155 +57,159 @@ generated_assets/
 
 ---
 
-## Completed Features (Committed)
+## Commit History
 
 | Commit | Feature |
 |--------|---------|
-| `e6b94c4` | Initial web app: Flask backend, single-file frontend, model download SSE, generation, history |
-| `1a2bd1b` | MP3 conversion with live progress, project README |
-| `9399c00` | History render bug fix, setup scripts, UI improvements |
-| `fddd7b5` | Karaoke word highlighting with stable-ts forced alignment |
-| `e1c349c` | MP3 icon and alignment button animations |
-| `bec414f` | Alignment icon swap to waveform, player separator |
-| `1ea0952` | LavaSR audio enhancement, speed control (0.5x–2.0x), UI polish |
-| `b29bece` | Silero VAD silence removal, 4-step stepper, version selector, clean_for_tts, silence threshold (0.2s–1.0s) |
-| `cdaeee5` | Soft-delete with TRASH folder, delete-all history button |
-| `1794108` | Initial commit on new repo (KittenTTS-Studio) — full app with all features above |
+| `1794108` | Initial web app: Flask backend, single-file frontend, model download SSE, generation, history |
+| `d88891a` | Project renamed to KittenTTS-Studio |
+| `61b1b98` | Redesign: sidebar navigation + always-dark theme |
+| `ef59b7c` | Abort button + concurrent generation OOM prevention |
+| `3408a03` | Atomic metadata management + alignment pipeline step |
+| `2f72fd0` | Audio padding, open-folder button, alignment progress UX |
+| `941dcbc` | Loguru logging, infinite polling fix, loudnorm channel error fix |
+| `4a9e51f` | History sorting by time, copy button, polling fixes |
+| `d4d3acc` | Breathing-block TTS chunking, short-block merge, UI refinements |
+| `c4d3e1f` | Force alignment page, library tabs, output folder restructuring |
+| `4b2b799` | Per-generation subfolders, unified history with type tags and filters |
+| `2a4319a` | UI/UX audit improvements, force-alignment karaoke |
 
 ---
 
-## Key Backend Components (`backend.py`)
+## Backend Components (`backend.py`, ~2,100 lines)
 
 ### Globals & Models
-- `alignment_model`, `alignment_lock` — stable-ts/whisper (lazy-loaded)
-- `enhance_model`, `enhance_lock` — LavaSR (lazy-loaded)
-- `vad_model`, `vad_utils`, `vad_lock` — Silero VAD (lazy-loaded via torch.hub)
+- `alignment_model`, `alignment_lock` -- stable-ts/whisper (lazy-loaded)
+- `enhance_model`, `enhance_lock` -- LavaSR (lazy-loaded)
+- `vad_model`, `vad_utils`, `vad_lock` -- Silero VAD (lazy-loaded via torch.hub)
 - Each has `*_tasks` dict + `*_tasks_lock` for tracking background threads
 - Each has `_check_*_available()` with cached result
+- `_get_metadata_lock(basename)` -- per-generation lock for atomic JSON read-modify-write
+
+### Text Processing
+- `clean_for_tts()` -- strips markdown `*_#\`~`, replaces URLs with "link", collapses whitespace
+- `normalize_for_tts()` -- full pipeline: symbols, contractions, abbreviations, currency, units, dates, time, ordinals, numbers (user-triggered via Format button)
+- `tts_breathing_blocks()` -- splits long texts into 150-200 char blocks with short-fragment merging
+
+### Generation
+- Chunked async generation via background thread + job queue
+- SSE progress streaming at `/api/generate-progress/<job_id>`
+- Abort support at `/api/generate-abort/<job_id>`
+- Single-block fast path for short texts (synchronous response)
+- Audio padding (`pad_audio`) and crossfade concatenation (`concatenate_chunks`)
+
+### Logging
+- Loguru with rotating daily file logs (7-day retention, gzip compressed)
+- Clean console output with level icons
 
 ### API Endpoints
+
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/` | GET | Serve frontend |
-| `/api/health` | GET | Status + feature flags (ffmpeg, alignment, enhance, vad) |
+| `/api/health` | GET | Status + feature flags (ffmpeg, alignment, enhance, VAD) |
 | `/api/models` | GET | List 5 models with specs |
 | `/api/voices` | GET | 8 voices |
+| `/api/normalize` | POST | Text normalization + breathing-block formatting |
 | `/api/model-status/<id>` | GET | Check if model is cached |
 | `/api/download-model/<id>` | GET (SSE) | Stream download progress |
 | `/api/generate` | POST | Generate audio (accepts model, voice, prompt, speed, max_silence_ms) |
-| `/api/normalize` | POST | Normalize text for TTS |
+| `/api/generate-progress/<job_id>` | GET (SSE) | Stream chunked generation progress |
+| `/api/generate-abort/<job_id>` | POST | Abort running generation |
 | `/api/generation` | GET | List history |
 | `/api/generation` | DELETE | Delete all (move to TRASH) |
 | `/api/generation/<file>` | DELETE | Delete single (move to TRASH) |
 | `/generation/<file>` | GET | Serve audio file |
-| `/api/generation/<file>/alignment` | GET | Word alignment data |
-| `/api/generation/<file>/enhance-status` | GET | Enhancement status |
+| `/api/generation/<file>/alignment` | GET | Word alignment data (retroactive) |
+| `/api/generation/<file>/enhance-status` | GET | Enhancement status (retroactive) |
 | `/api/generation/<file>/vad-status` | GET | Silence removal + loudnorm status |
-| `/api/generation/<file>/mp3-convert` | GET (SSE) | Convert WAV to MP3 with progress |
+| `/api/generation/<file>/mp3-check` | GET | Check if MP3 exists |
 | `/api/generation/<file>/mp3` | GET | Serve cached MP3 |
+| `/api/generation/<file>/mp3-convert` | GET (SSE) | Convert WAV to MP3 with progress |
 | `/api/generation/alignments` | GET | List alignment data (TTS + standalone) |
+| `/api/generation/force-alignment` | GET | List standalone force-alignment results |
+| `/api/generation/alignment/<folder>` | DELETE | Soft-delete alignment folder |
 | `/api/force-align` | POST | Standalone force alignment (audio + text upload) |
-
-### Text Processing
-- `clean_for_tts()` — strips markdown `*_#\`~`, replaces URLs with "link", collapses whitespace (applied before TTS generation)
-- `normalize_for_tts()` — full pipeline: symbols, contractions, abbreviations, currency, units, dates, time, ordinals, numbers (called via `/api/normalize` endpoint, user-triggered via Format button)
+| `/api/open-generation-folder` | POST | Open OS file explorer at job folder |
+| `/generation/force-alignment/<file>` | GET | Serve alignment audio |
 
 ---
 
-## Key Frontend Components (`frontend/index.html`)
+## Frontend Components (`frontend/index.html`, ~2,700 lines)
 
 ### STATE Object
 ```javascript
 {
   selectedModel, selectedVoice, history, nowPlaying,
-  isGenerating, darkMode, downloadEventSource, eqInterval,
+  isGenerating, darkMode: true, downloadEventSource, eqInterval,
   ffmpeg, alignment, alignmentAvailable, alignmentPollTimer, activeWordIndex,
   enhanceAvailable, enhancePollTimer,
   vadAvailable, vadPollTimer,
   activeVersion,      // 'original' | 'enhanced' | 'cleaned'
-  processingStep,     // 0=idle, 1–5=pipeline steps
+  processingStep,     // 0=idle, 1-5=pipeline steps
+  histFilter,         // 'all' | 'tts' | 'align'
+  sidebarCollapsed,   // persisted to localStorage
 }
 ```
 
-### UI Sections
-1. **Header** — logo, dark mode toggle, hamburger menu
-2. **Model selector** — dropdown with 5 models + size badge
-3. **Voice grid** — 8 clickable voice chips
-4. **Speed + Silence selectors** — dropdowns (0.5x–2.0x, 0.2s–1.0s)
-5. **Prompt** — textarea with word/token count + Format button
-6. **Processing stepper** — 5-step visual pipeline (shown during generation)
-7. **Generate button** — changes color per step (coral→teal→gold→orange→purple)
-8. **History** — scrollable list with play, text expand, alignment buttons + delete-all
-9. **Fixed footer player** — seek bar, play/pause, karaoke text, version selector, cleaned MP3 download, delete
+### Design System
+- Always-dark theme: navy surfaces (#0a0e13 / #0f1520 / #161d2a)
+- Teal accent (#4ECDC4), coral (#FF6B6B), gold (#FFE66D), purple (#A78BFA)
+- Fonts: Space Grotesk (display), DM Sans (body), JetBrains Mono (code/numbers)
+- Fixed collapsible sidebar (220px / 64px collapsed)
+- Mobile bottom tab bar (< 768px)
+- Fixed bottom player bar (80px)
+
+### 4 Pages (sidebar navigation)
+1. **TTS** -- model select, 8 voice chips (F/M gender dots), prompt textarea, word/token counter, Format/Copy buttons, Ctrl+Enter hint, Generate button, 4-step processing stepper
+2. **Alignment** -- standalone force alignment: drag-and-drop file upload zone, transcript textarea, submit, karaoke results with word highlighting
+3. **Library** -- unified history with filter tabs (ALL / #TTS / #ALIGNMENT), play/metadata/delete per item, delete-all button
+4. **Settings** -- speed selector (0.5x-2.0x), max silence duration (200ms-1000ms), feature status panel, About
 
 ### Key JS Functions
-- `handleGenerate()` — orchestrates 5-step pipeline with sequential polling
-- `pollUntilDone(url, done, pending, interval, onProgress)` — generic status poller
-- `switchAudioVersion(ver)` — swap player src, preserve position
-- `pollVersionStatuses(filename)` — parallel polling for enhance + VAD readiness
-- `normalizePrompt()` — calls `/api/normalize`, replaces prompt text
-- `autoConvertMp3(wavFilename)` — SSE-driven MP3 conversion
-- `downloadCleanedMp3()` — fetch + blob download of cleaned MP3
+- `handleGenerate()` -- orchestrates multi-step pipeline with sequential polling
+- `pollUntilDone(url, done, pending, interval, onProgress)` -- generic status poller
+- `switchAudioVersion(ver)` -- swap player src, preserve position
+- `pollVersionStatuses(filename)` -- parallel polling for enhance + VAD readiness
+- `normalizePrompt()` -- calls `/api/normalize`, replaces prompt text
+- `autoConvertMp3(wavFilename)` -- SSE-driven MP3 conversion
+- `downloadCleanedMp3()` -- fetch + blob download of cleaned MP3
+- `renderKaraokeText()` -- word-level karaoke with requestAnimationFrame, binary search, click-to-seek
+
+### Key Frontend Features
+- Karaoke word highlighting with auto-scroll and click-to-seek
+- 3-version player (Original/Enhanced/Cleaned) with position preservation
+- 4-step processing stepper with color-coded progress
+- Retroactive processing triggers (alignment/enhancement/VAD on old files)
+- Breathing-block text formatting via Format button
+- Drag-and-drop (text files on prompt, audio files on alignment upload)
+- EQ animation bars in player
+- Toast notifications (teal/coral/dark variants)
+- All selections persisted to localStorage (model, voice, speed, silence, sidebar)
+- Confirmation modal for bulk delete
 
 ---
 
 ## Dependencies (`requirements.txt`)
 ```
-kittentts-0.8.0 (wheel)
+kittentts-0.8.0 (wheel from GitHub release)
 flask, flask-cors
-openai-whisper, stable-ts     # alignment
-git+LavaSR                     # enhancement
-num2words                      # text normalization
+loguru                          # structured logging
+openai-whisper, stable-ts       # alignment
+git+LavaSR                      # enhancement
+num2words                       # text normalization
 ```
 Implicit: torch, numpy, soundfile, huggingface-hub, onnxruntime, spacy (pulled by kittentts/whisper/LavaSR)
 
 ### Optional System Dependencies
-- **ffmpeg** — MP3 conversion, loudnorm. Place in `bin/` or install system-wide.
-- **eSpeak-ng** — not used (switched from aeneas to stable-ts for alignment)
+- **ffmpeg** -- MP3 conversion, loudnorm. Place in `bin/` or install system-wide.
 
 ---
 
-## Upcoming: Prosody (Expression) in Audio via Parselmouth
+## Upcoming / TODO
 
-**Status: NOT STARTED**
-
-KittenTTS generates flat, neutral speech. Post-generation expression manipulation (pitch, expressiveness, rate) via **Parselmouth** (Python wrapper for Praat) — lightweight (~10MB), no GPU, parametric slider controls, sub-100ms processing.
-
-### Pipeline Position
-```
-Generate (24kHz) → Expression (Parselmouth, in-place) → Loudnorm → Enhancement → VAD → MP3
-```
-Applied synchronously during generation (before WAV write). The expression-adjusted audio becomes the base file.
-
-### Changes Required
-
-**`requirements.txt`** — Add `parselmouth`
-
-**`backend.py`**:
-- Add `expression_available = None` global
-- Add `_check_expression_available()` — lazy import, cached result
-- Add `_run_expression(audio_np, sample_rate, pitch_shift, pitch_range, rate_factor)`:
-  - No-op fast path if all defaults (0, 1.0, 1.0)
-  - Parselmouth PSOLA: `To Manipulation` → pitch tier → `Multiply frequencies` → `Get resynthesis (overlap-add)`
-  - Duration tier for rate adjustment
-- Update `/api/health` — add `"expression": _check_expression_available()`
-- Update `/api/generate` — accept `pitch_shift` (-6 to +6), `pitch_range` (0.5 to 2.0), `rate_adjust` (0.8 to 1.3)
-- Integrate into single-sentence and chunked generation paths
-
-**`frontend/index.html`**:
-- Add `STATE.expressionAvailable`, set from health response
-- Settings page — "Expression" card with 3 sliders (Pitch Shift, Pitch Range, Rate Adjust)
-- Pass expression params in `handleGenerate()` request body
-- Show expression badge in history when non-default
-
----
-
-## Known Issues / TODO
-- [x] ~~Commit pending changes (normalize + loudnorm + bug fixes)~~ — included in initial commit
-- [x] ~~Project renamed to **KittenTTS-Studio**, pushed to GitHub~~
-- [ ] Prosody (Expression) in Audio — see section above
-- [ ] Long text chunking: split by sentence for better prosody on long prompts
+- [ ] Prosody (Expression) in Audio via Parselmouth -- pitch shift, pitch range, rate adjustment sliders
+- [ ] Long text chunking improvements for better prosody on complex prompts
 - [ ] Batch generation queue for automation pipelines
-- [ ] Waveform visualization during playback
-- [ ] Dark mode persistence improvements
-- [ ] Favicon (currently 404)
+- [ ] Audio waveform visualization during playback
+- [ ] Favicon

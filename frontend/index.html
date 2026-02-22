@@ -1638,6 +1638,15 @@
             <path d="M20 21H4" />
           </svg>
         </button>
+        <button id="np-goto-karaoke" onclick="goToKaraoke()" title="Show in library" aria-label="Show in library" class="hover-accent-icon"
+          style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" viewBox="0 0 24 24">
+            <path d="M4 6h16M4 12h16M4 18h10" />
+            <circle cx="19" cy="18" r="3" fill="none" />
+            <path d="M18 16.5v2l1.5.75" />
+          </svg>
+        </button>
         <button id="np-open-folder" onclick="openAudioFolder()" title="Open audio folder" aria-label="Open folder" class="hover-accent-icon"
           style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer">
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -1809,7 +1818,7 @@
         $('#model-select').value = STATE.selectedModel;
         $('#model-size').textContent = MODEL_SIZES[STATE.selectedModel] || '';
         const savedPrompt = localStorage.getItem('kittenTTS-prompt');
-        if (savedPrompt) { $('#prompt-input').value = savedPrompt; updateCounts(); }
+        if (savedPrompt) { $('#prompt-input').value = _stripBrackets(savedPrompt); updateCounts(); }
         renderVoices(); buildEqualizer(); await loadHistory();
       } catch (e) { console.error('Init:', e); toast('Failed to connect to server', 'error'); }
     }
@@ -1851,9 +1860,10 @@
       $('#token-count').textContent = Math.round(w * 1.3);
     }
 
+    function _stripBrackets(s) { return s.replace(/[\[\]]/g, '').replace(/\n{3,}/g, '\n\n').trim(); }
     async function normalizePrompt() {
       const input = $('#prompt-input');
-      const text = input.value.trim();
+      const text = _stripBrackets(input.value);
       if (!text) { toast('Enter text first', 'error'); return; }
       const btn = $('#normalize-btn');
       const orig = btn.textContent;
@@ -1863,7 +1873,7 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text }),
         });
-        input.value = res.normalized;
+        input.value = _stripBrackets(res.normalized);
         updateCounts();
         localStorage.setItem('kittenTTS-prompt', input.value);
         toast('Text normalized for TTS');
@@ -2088,7 +2098,7 @@
       try {
         try {
           const fmt = await api('/api/normalize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: prompt }), signal: abort.signal });
-          if (fmt.normalized && fmt.normalized !== prompt) { $('#prompt-input').value = fmt.normalized; updateCounts(); localStorage.setItem('kittenTTS-prompt', fmt.normalized); }
+          if (fmt.normalized && fmt.normalized !== prompt) { const clean = _stripBrackets(fmt.normalized); $('#prompt-input').value = clean; updateCounts(); localStorage.setItem('kittenTTS-prompt', clean); }
         } catch (_) { if (abort.signal.aborted) throw new DOMException('Aborted', 'AbortError'); }
         const status = await api(`/api/model-status/${STATE.selectedModel}`, { signal: abort.signal });
         if (!status.cached) await downloadModel(STATE.selectedModel);
@@ -2350,6 +2360,37 @@
       if (!STATE.alignmentAvailable) { toast('Alignment not available', 'error'); return; }
       _updateAlignDot(filename, 'aligning'); fetchAlignment(filename);
     }
+    function goToKaraoke() {
+      if (!STATE.nowPlaying) return;
+      switchPage('library');
+      // Set correct filter tab so the item is visible
+      const filterType = STATE.nowPlaying._isAlign ? 'align' : 'tts';
+      const activeFilter = STATE.histFilter || 'all';
+      if (activeFilter !== 'all' && activeFilter !== filterType) {
+        setHistFilter('all');
+      }
+      requestAnimationFrame(() => {
+        const histItem = _activeHistItem();
+        if (!histItem) return;
+        // Force open the text expand area with karaoke
+        const expand = histItem.querySelector('.hist-text-expand');
+        const toggleBtn = histItem.querySelector('[onclick*="toggleHistText"]');
+        if (expand && expand.style.display === 'none') {
+          expand.style.display = 'block';
+          if (toggleBtn) { toggleBtn.style.color = 'var(--accent)'; toggleBtn.style.background = 'rgba(78,205,196,0.06)'; }
+        }
+        // If alignment is available, show karaoke; otherwise show plain text
+        if (STATE.alignment && STATE.alignment.length) {
+          _showHistKaraoke(STATE.nowPlaying._isAlign ? STATE.nowPlaying.folder : STATE.nowPlaying.filename);
+        }
+        // Scroll the history item into view
+        histItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Brief highlight flash
+        histItem.style.transition = 'background 0.3s';
+        histItem.style.background = 'rgba(78,205,196,0.08)';
+        setTimeout(() => { histItem.style.background = ''; }, 1200);
+      });
+    }
 
     // ======================================================================
     // Audio Version Switching
@@ -2522,7 +2563,7 @@
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="8" y1="9" x2="10" y2="9"/></svg>
         </button>
       </div>
-      <div class="hist-text-expand" style="display:none;padding:0 14px 10px 56px;max-height:200px;overflow-y:auto">
+      <div class="hist-text-expand" style="display:none;margin:0 14px 10px 56px;max-height:200px;overflow-y:auto;background:var(--bg-darkest);border-radius:6px;padding:10px 12px;border-left:2px solid rgba(196,181,253,0.3)">
         <p class="hist-text-plain" style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin:0;white-space:pre-wrap;word-break:break-word">${esc(displayText)}</p>
         <div class="hist-karaoke" style="display:none;flex-wrap:wrap;gap:1px 1px;line-height:1.8"></div>
       </div>
@@ -2547,7 +2588,7 @@
         </button>
         ${STATE.alignmentAvailable ? `<span class="align-dot ${h.alignment_status || 'pending'}" title="${h.alignment_status === 'ready' ? 'Aligned' : h.alignment_status === 'aligning' ? 'Aligning…' : h.alignment_status === 'failed' ? 'Alignment failed' : 'Pending'}"></span>` : ''}
       </div>
-      <div class="hist-text-expand" style="display:none;padding:0 14px 10px 56px;max-height:200px;overflow-y:auto">
+      <div class="hist-text-expand" style="display:none;margin:0 14px 10px 56px;max-height:200px;overflow-y:auto;background:var(--bg-darkest);border-radius:6px;padding:10px 12px;border-left:2px solid rgba(78,205,196,0.3)">
         <p class="hist-text-plain" style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin:0;white-space:pre-wrap;word-break:break-word">${esc(h.prompt)}</p>
         <div class="hist-karaoke" style="display:none;flex-wrap:wrap;gap:1px 1px;line-height:1.8"></div>
       </div>
@@ -2571,7 +2612,7 @@
     }
     function copyHistPrompt(idx) {
       if (idx < 0 || idx >= STATE.history.length) return;
-      const text = STATE.history[idx].prompt || '';
+      const text = _stripBrackets(STATE.history[idx].prompt || '');
       $('#prompt-input').value = text;
       updateCounts();
       localStorage.setItem('kittenTTS-prompt', text);

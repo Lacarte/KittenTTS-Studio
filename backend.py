@@ -661,14 +661,10 @@ def normalize_text():
     text = data.get("text", "")
     if not text.strip():
         return jsonify({"error": "No text provided"}), 400
-    # If already bracket-formatted, normalize each block individually
-    pre_blocks = re.findall(r'\[([^\[\]]+)\]', text)
-    if pre_blocks and len(pre_blocks) >= 2:
-        formatted = "\n\n".join(f"[{normalize_for_tts(b)}]" for b in pre_blocks if b.strip())
-    else:
-        normalized = normalize_for_tts(text)
-        formatted = format_breathing_blocks(normalized)
-    return jsonify({"original": text, "normalized": formatted})
+    # Strip any existing bracket formatting before normalizing
+    stripped = re.sub(r'[\[\]]', '', text)
+    normalized = normalize_for_tts(stripped)
+    return jsonify({"original": text, "normalized": normalized})
 
 
 # --- Models ---
@@ -845,13 +841,14 @@ def _background_chunked_generate(job_id, model_id, voice, sentences, speed,
         rtf = total_inference / duration_generated if duration_generated > 0 else 0
         logger.success("Generated  {:.1f}s audio in {:.2f}s | RTF {:.2f} | {} chunks", duration_generated, total_inference, rtf, total)
 
-        words = len(prompt.split())
+        clean_prompt = re.sub(r'[\[\]]', '', prompt).strip()
+        words = len(clean_prompt.split())
         approx_tokens = int(words * 1.3)
 
         metadata = {
             "filename": basename + ".wav",
             "folder": basename,
-            "prompt": prompt.strip(),
+            "prompt": clean_prompt,
             "model": MODELS[model_id]["repo"],
             "model_id": model_id,
             "voice": voice,
@@ -981,9 +978,6 @@ def generate():
     # Wrap in brackets for TTS pacing
     single_block = blocks[0] if blocks else tts_prompt
     tts_input = f"[{single_block}]"
-    words = len(tts_prompt.split())
-    approx_tokens = int(words * 1.3)
-
     start = time.perf_counter()
     try:
         with generation_inference_lock:
@@ -1007,10 +1001,11 @@ def generate():
     sf.write(os.path.join(job_dir, wav_name), audio, 24000)
     logger.success("Generated  {:.1f}s audio in {:.2f}s | RTF {:.2f}", duration_generated, inference_time, rtf)
 
+    clean_prompt = re.sub(r'[\[\]]', '', prompt).strip()
     metadata = {
         "filename": wav_name,
         "folder": basename,
-        "prompt": prompt.strip(),
+        "prompt": clean_prompt,
         "model": MODELS[model_id]["repo"],
         "model_id": model_id,
         "voice": voice,
@@ -1021,8 +1016,8 @@ def generate():
         "sample_rate": 24000,
         "speed": speed,
         "max_silence_ms": max_silence_ms,
-        "words": words,
-        "approx_tokens": approx_tokens,
+        "words": len(clean_prompt.split()),
+        "approx_tokens": int(len(clean_prompt.split()) * 1.3),
     }
     with open(os.path.join(job_dir, json_name), "w") as f:
         json.dump(metadata, f, indent=2)

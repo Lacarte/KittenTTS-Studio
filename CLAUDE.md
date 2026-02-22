@@ -1,107 +1,118 @@
-Here is the **complete, refined prompt**:
-
----
-
-## Complete Project Brief: KittenTTS Web Studio
+## KittenTTS Web Studio -- Project Brief
 
 ### Goal
-Create a complete web application for KittenTTS text-to-speech generation with a Flask backend, beautiful Flask-served frontend, real-time model download progress, audio generation, history management, and one-click startup.
+A complete web application for KittenTTS text-to-speech generation with a Flask backend, dark-themed single-page frontend, real-time model download progress, multi-step audio processing pipeline, history management, and one-click startup.
 
 ---
 
 ### Project Structure
 ```
-kittentts-studio/
-├── main.py                 # Original CLI script (UNCHANGED)
-├── backend.py              # Flask API server
-├── requirements.txt        # Python dependencies
-├── runner.bat              # Windows one-click launcher
-├── setup.bat               # Environment setup
-├── models/                 # Cached TTS models (persisted)
-├── generated_assets/       # All generated output (gitignored)
-│   ├── tts/                # TTS audio + metadata
-│   │   ├── reports-of-my-death_20250220_143052.wav
-│   │   ├── reports-of-my-death_20250220_143052.json
-│   │   └── TRASH/          # Soft-deleted TTS files
-│   └── force-alignment/    # Standalone alignment results
-│       └── TRASH/          # Soft-deleted alignment files
-└── frontend/
-    └── index.html          # Single-file, inline everything
+KittenTTS-Studio/
++-- main.py                 # Original CLI script (UNCHANGED)
++-- backend.py              # Flask API server (~2,100 lines)
++-- requirements.txt        # Python dependencies
++-- runner.bat              # Windows one-click launcher (health-check polling)
++-- setup.bat               # Environment setup (auto-downloads Python 3.12 if needed)
++-- PLAN.md                 # Architecture notes and session log
++-- bin/                    # Local ffmpeg (optional, gitignored)
++-- logs/                   # Loguru rotating logs (gitignored)
++-- generated_assets/       # All generated output (gitignored)
+|   +-- tts/                # Per-generation subfolders
+|   |   +-- <basename>/     # One subfolder per generation
+|   |   |   +-- <basename>.wav          # Original (24kHz)
+|   |   |   +-- <basename>.json         # Metadata
+|   |   |   +-- <basename>_enhanced.wav # Enhanced (48kHz, LavaSR)
+|   |   |   +-- <basename>_cleaned.wav  # Silence removed + loudnorm
+|   |   |   +-- <basename>_cleaned.mp3  # MP3 of cleaned version
+|   |   +-- TRASH/          # Soft-deleted TTS files
+|   +-- force-alignment/    # Standalone alignment results
+|       +-- TRASH/          # Soft-deleted alignment files
++-- frontend/
+    +-- index.html          # Single-file UI (~2,700 lines, inline CSS/JS, Tailwind CDN)
 ```
 
 ---
 
 ### 1. BACKEND (`backend.py`)
 
-**Framework:** Flask + Flask-CORS + Flask-SSE (or pure SSE via `yield`)
+**Framework:** Flask + Flask-CORS + Loguru logging
 
-**Core Logic:** Copy from `main.py`:
+**Core Logic:** Based on `main.py`:
 ```python
 from kittentts import KittenTTS
 import soundfile as sf
 import time
 
-# Model initialization (downloads from HF Hub on first run)
 m = KittenTTS("KittenML/kitten-tts-mini-0.8")
 
-# Generation with timing
 start = time.perf_counter()
 audio = m.generate(prompt, voice=voice)
 end = time.perf_counter()
 
-# Metrics
 duration_generated = len(audio) / 24000
 inference_time = end - start
 rtf = inference_time / duration_generated
 ```
 
+**Text Processing Pipeline:**
+- `clean_for_tts()` -- strips markdown, replaces URLs, collapses whitespace
+- `normalize_for_tts()` -- expands contractions, abbreviations, currency, units, dates, ordinals, numbers via num2words
+- `tts_breathing_blocks()` -- splits long texts into 150-200 char blocks with short-fragment merging, wraps in `[...]` brackets
+
+**Generation:**
+- Single-block fast path for short texts (synchronous)
+- Chunked async generation for long texts via background thread + job queue
+- SSE progress streaming at `/api/generate-progress/<job_id>`
+- Abort support at `/api/generate-abort/<job_id>`
+- Audio padding (`pad_audio`) and crossfade concatenation (`concatenate_chunks`)
+
+**Post-Processing (all lazy-loaded, gracefully skipped if unavailable):**
+- Force alignment via stable-ts (Whisper tiny.en) -- word-level timestamps
+- Audio enhancement via LavaSR -- 24kHz to 48kHz upscaling
+- Silence removal via Silero VAD (torch.hub) -- with configurable threshold
+- Loudness normalization via ffmpeg loudnorm
+- MP3 conversion via ffmpeg with SSE progress
+
+Each post-processor uses its own background thread with per-basename metadata locks for atomic JSON read-modify-write. Enhancement chains into VAD when complete.
+
 **API Endpoints:**
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/health` | GET | Server status + current port |
-| `/api/models` | GET | List 5 models with specs |
-| `/api/voices` | GET | 8 voices: Bella, Jasper, Luna, Bruno, Rosie, Hugo, Kiki, Leo |
-| `/api/model-status/<model_id>` | GET | Check cached status + file list |
-| `/api/download-model/<model_id>` | GET (SSE) | Stream download progress in real-time |
-| `/api/generate` | POST | `{model, voice, prompt}` → generate audio |
-| `/api/generation` | GET | List all generated files with metadata |
-| `/api/generation/alignments` | GET | List alignment data (TTS + standalone) |
-| `/api/force-align` | POST | Standalone force alignment (audio + text upload) |
-| `/generation/<filename>` | GET | Serve audio file |
 | `/` | GET | Serve `frontend/index.html` |
+| `/api/health` | GET | Status + feature flags (ffmpeg, alignment, enhance, VAD) |
+| `/api/models` | GET | List 5 models with specs |
+| `/api/voices` | GET | 8 voices |
+| `/api/normalize` | POST | Text normalization + breathing-block formatting |
+| `/api/model-status/<id>` | GET | Check if model is cached |
+| `/api/download-model/<id>` | GET (SSE) | Stream download progress in real-time |
+| `/api/generate` | POST | `{model, voice, prompt, speed, max_silence_ms}` |
+| `/api/generate-progress/<job_id>` | GET (SSE) | Stream chunked generation progress |
+| `/api/generate-abort/<job_id>` | POST | Abort running generation |
+| `/api/generation` | GET | List all generated files with metadata |
+| `/api/generation` | DELETE | Delete all files (move to TRASH) |
+| `/api/generation/<file>` | DELETE | Delete single file (move to TRASH) |
+| `/api/generation/<file>/alignment` | GET | Word alignment data (triggers retroactively) |
+| `/api/generation/<file>/enhance-status` | GET | Enhancement status (triggers retroactively) |
+| `/api/generation/<file>/vad-status` | GET | Silence removal + loudnorm status |
+| `/api/generation/<file>/mp3-check` | GET | Check if MP3 exists |
+| `/api/generation/<file>/mp3` | GET | Serve cached MP3 |
+| `/api/generation/<file>/mp3-convert` | GET (SSE) | Convert WAV to MP3 with progress |
+| `/api/generation/alignments` | GET | List alignment data (TTS + standalone) |
+| `/api/generation/force-alignment` | GET | List standalone force-alignment results |
+| `/api/generation/alignment/<folder>` | DELETE | Soft-delete alignment folder |
+| `/api/force-align` | POST | Standalone force alignment (audio + text upload) |
+| `/api/open-generation-folder` | POST | Open OS file explorer at job folder |
+| `/generation/<file>` | GET | Serve audio file |
+| `/generation/force-alignment/<file>` | GET | Serve alignment audio |
 
 **SSE Download Progress Format:**
 ```
 data: {"phase": "checking", "model": "mini"}
 data: {"phase": "downloading", "file": "config.json", "progress": 100, "size": "470B", "speed": "2.81MB/s"}
 data: {"phase": "downloading", "file": "kitten_tts_mini_v0_8.onnx", "progress": 78, "total_mb": 78.3, "downloaded_mb": 61.2, "speed": "87.6MB/s"}
-data: {"phase": "downloading", "file": "voices.npz", "progress": 100, "size": "3.28MB", "speed": "16.3MB/s"}
 data: {"phase": "ready", "message": "Model ready"}
 ```
-
-> **Implementation: Capture download progress via custom `tqdm_class`.**
-> `huggingface_hub.hf_hub_download()` accepts a `tqdm_class` parameter.
-> Subclass `tqdm` to capture per-file progress (filename, bytes downloaded, total, speed)
-> and stream it to the frontend via SSE.
->
-> ```python
-> from huggingface_hub import hf_hub_download
-> from tqdm import tqdm
->
-> class ProgressCapture(tqdm):
->     def update(self, n=1):
->         super().update(n)
->         # self.desc = filename, self.n = downloaded, self.total = total bytes
->         # Send progress via SSE to frontend here
->
-> # Pre-download model files with progress tracking
-> for filename in ["config.json", "model.onnx", "voices.npz"]:
->     hf_hub_download(repo_id, filename, tqdm_class=ProgressCapture)
->
-> # KittenTTS loads instantly from HF cache
-> m = KittenTTS(repo_id)
-> ```
 
 **File Naming Convention:**
 ```python
@@ -109,11 +120,9 @@ import re
 from datetime import datetime
 
 def generate_filename(prompt):
-    # Clean excerpt: first 30 chars, alphanumeric only
     excerpt = re.sub(r'[^a-zA-Z0-9]+', '-', prompt[:30].lower()).strip('-')
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"{excerpt}_{timestamp}"
-# Result: "the-reports-of-my-death-are-grea_20250220_143052.wav"
 ```
 
 **Metadata JSON Structure:**
@@ -127,210 +136,130 @@ def generate_filename(prompt):
   "inference_time": 1.234,
   "rtf": 0.15,
   "duration_seconds": 8.2,
-  "sample_rate": 24000
+  "sample_rate": 24000,
+  "word_alignment": [{"word": "The", "start": 0.0, "end": 0.15}, ...],
+  "enhanced": true,
+  "cleaned": true
 }
 ```
 
-**Port Configuration:** Auto-detect starting from 5000, increment until available. Print `🚀 Server running on http://localhost:PORT`
+**Port Configuration:** Auto-detect starting from 5000, increment until available.
+
+**Logging:** Loguru with daily rotation, 7-day retention, gzip compression, clean console output with level icons.
 
 ---
 
 ### 2. FRONTEND (`frontend/index.html`)
 
-**Architecture:** Single file, inline CSS/JS, served by Flask
+**Architecture:** Single file (~2,700 lines), inline CSS/JS, served by Flask
 
 **Tech Stack:**
-- Tailwind CSS v3 via CDN (custom brand palette, NO default blue/indigo)
+- Tailwind CSS v3 via CDN (custom dark palette, NO default blue/indigo)
 - Vanilla JavaScript (ES6+)
 - Native Web Audio API for playback
-- EventSource for SSE download progress
+- EventSource for SSE download/generation progress
+- Fonts: Space Grotesk (display), DM Sans (body), JetBrains Mono (code/numbers)
 
-**Design System:**
+**Design System (Always-Dark):**
 ```css
-:root {
-  --brand-primary: #FF6B6B;      /* Coral red */
-  --brand-secondary: #4ECDC4;    /* Teal */
-  --brand-accent: #FFE66D;       /* Yellow */
-  --brand-dark: #2C3E50;         /* Navy */
-  --brand-light: #F7F9FC;        /* Off-white */
-  --shadow-sm: 0 2px 4px rgba(44,62,80,0.06);
-  --shadow-md: 0 4px 12px rgba(44,62,80,0.12);
-  --shadow-lg: 0 8px 24px rgba(44,62,80,0.18);
-  --space-xs: 0.25rem;
-  --space-sm: 0.5rem;
-  --space-md: 1rem;
-  --space-lg: 1.5rem;
-  --space-xl: 2.5rem;
-}
+/* Navy surface hierarchy */
+--bg-base: #0a0e13;
+--bg-surface: #0f1520;
+--bg-card: #161d2a;
+
+/* Accent colors */
+--brand-primary: #FF6B6B;      /* Coral red */
+--brand-secondary: #4ECDC4;    /* Teal */
+--brand-accent: #FFE66D;       /* Yellow */
+--brand-purple: #A78BFA;       /* Purple */
 ```
 
-**UI Layout (Mobile-First):**
+**Layout:**
+- Fixed collapsible sidebar (220px / 64px collapsed, persisted to localStorage)
+- Mobile bottom tab bar (< 768px, sidebar hidden)
+- Fixed bottom player bar (80px)
 
-```
-┌─────────────────────────────────────────┐
-│  🎙️  KittenTTS Studio          [≡]     │
-├─────────────────────────────────────────┤
-│                                         │
-│  ┌─────────────────────────────────┐    │
-│  │  MODEL                          │    │
-│  │  [Kitten TTS Mini    ▼]  80MB   │    │
-│  └─────────────────────────────────┘    │
-│                                         │
-│  ┌─────────────────────────────────┐    │
-│  │  VOICE                          │    │
-│  │  [Jasper ●▲▼]  [Luna] [Bruno]   │    │
-│  │  [Rosie] [Hugo] [Kiki] [Leo]    │    │
-│  │  [Bella]                        │    │
-│  └─────────────────────────────────┘    │
-│                                         │
-│  ┌─────────────────────────────────┐    │
-│  │  PROMPT                         │    │
-│  │  ┌─────────────────────────┐    │    │
-│  │  │The reports of my death..│    │    │
-│  │  │are greatly exaggerated..│    │    │
-│  │  └─────────────────────────┘    │    │
-│  │  47 words · ~61 tokens          │    │
-│  └─────────────────────────────────┘    │
-│                                         │
-│  [      ✨ GENERATE AUDIO      ]        │
-│                                         │
-├─────────────────────────────────────────┤
-│  NOW PLAYING                            │
-│  ┌─────────────────────────────────┐    │
-│  │  ▶️ ━━━━━━━━━━━━━━━━⚫───  0:08/0:32 │
-│  │  "The reports of my death..."   │    │
-│  │  Mini · Jasper · 1.2s · RTF 0.15│    │
-│  │  [⬇️ Download]  [🗑️ Delete]     │    │
-│  └─────────────────────────────────┘    │
-│                                         │
-├─────────────────────────────────────────┤
-│  📚 HISTORY (12 files)                  │
-│  ┌─────────────────────────────────┐    │
-│  │ ▶️ │reports-of-my-death...│ 2m │    │
-│  │ ▶️ │ai-taking-our-jobs... │ 1h │    │
-│  │ ▶️ │this-tts-works-with...│ 3h │    │
-│  └─────────────────────────────────┘    │
-│                                         │
-└─────────────────────────────────────────┘
-```
+**4 Pages (sidebar navigation):**
 
-**Interactive States (All Elements):**
-- **Hover:** Scale 1.02, shadow increase, color shift
-- **Focus:** Ring-2 ring-brand-primary outline-none
-- **Active:** Scale 0.98, darker background
-- **Disabled:** Opacity 50%, cursor not-allowed
-- **Loading:** Skeleton shimmer or spinner
+1. **TTS (Generate)**
+   - Model dropdown with 5 models + size badge
+   - 8 clickable voice chips with gender indicator dots (F/M)
+   - Prompt textarea with word/token counter
+   - Format button (calls `/api/normalize`) + Copy button
+   - Ctrl+Enter shortcut hint
+   - Generate button (changes color per pipeline step)
+   - 4-step processing stepper (Generate -> Enhance -> Clean -> Normalize)
+
+2. **Alignment**
+   - Drag-and-drop audio file upload zone
+   - Transcript textarea
+   - Submit button
+   - Karaoke results with word-level highlighting and click-to-seek
+
+3. **Library**
+   - Unified history list (TTS + force-alignment results merged by timestamp)
+   - Filter tabs: ALL / #TTS / #ALIGNMENT
+   - Per-item: play button, text expand, metadata, alignment button, delete
+   - Delete-all button with confirmation modal
+
+4. **Settings**
+   - Speed selector (0.5x-2.0x, persisted)
+   - Max silence duration (200ms-1000ms, persisted)
+   - Feature availability status panel (ffmpeg, alignment, enhance, VAD)
+   - About section
+
+**Player (fixed footer):**
+- Seek bar, play/pause, time display
+- Karaoke text with real-time word highlighting, auto-scroll, click-to-seek
+- 3-version selector: Original / Enhanced / Cleaned (preserves seek position)
+- MP3 download button (cleaned version)
+- Delete button
+- EQ animation bars
+
+**Interactive States:**
+- Hover: Scale 1.02, shadow increase, color shift
+- Focus: Ring-2 ring-brand-primary outline-none
+- Active: Scale 0.98, darker background
+- Disabled: Opacity 50%, cursor not-allowed
+- Loading: Skeleton shimmer or spinner
+
+**Persistence (localStorage):**
+- Selected model, voice, speed, silence threshold
+- Sidebar collapsed state
+- All restored on page load
 
 ---
 
-### 3. DOWNLOAD PROGRESS MODAL
-
-**Triggered:** When user clicks Generate and model not cached
-
-```
-┌─────────────────────────────────────────┐
-│  📥 Downloading Model                   │
-│  Kitten TTS Mini (80MB)                 │
-│                                         │
-│  ┌─────────────────────────────────┐    │
-│  │  📄 config.json                 │    │
-│  │  ████████████████░░░░  100%     │    │
-│  │  ✓ 470B @ 2.81MB/s              │    │
-│  └─────────────────────────────────┘    │
-│                                         │
-│  ┌─────────────────────────────────┐    │
-│  │  🧠 kitten_tts_mini_v0_8.onnx   │    │
-│  │  ██████████████░░░░░░   78%     │    │
-│  │  ↓ 61.2MB / 78.3MB @ 87.6MB/s   │    │
-│  └─────────────────────────────────┘    │
-│                                         │
-│  ┌─────────────────────────────────┐    │
-│  │  🎙️ voices.npz                  │    │
-│  │  ░░░░░░░░░░░░░░░░░░░░    0%     │    │
-│  │  ⏳ Waiting for model...        │    │
-│  └─────────────────────────────────┘    │
-│                                         │
-│  [    Cancel & Use Cached Model    ]    │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
-**Animation Specs:**
-- Progress bars: `transition: width 0.3s ease-out`
-- Shimmer effect on incomplete bars: `background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)` with `animation: shimmer 1.5s infinite`
-- File icons pulse when downloading
-- Speed text updates every 100ms
-- Auto-dismiss with success toast when complete
-
----
-
-### 4. SETUP & RUNNER SCRIPTS
+### 3. SETUP & RUNNER SCRIPTS
 
 **`requirements.txt`:**
 ```
 https://github.com/KittenML/KittenTTS/releases/download/0.8/kittentts-0.8.0-py3-none-any.whl
 flask
 flask-cors
+loguru
+openai-whisper
+stable-ts
+git+https://github.com/ysharma3501/LavaSR.git
+num2words
 ```
-> **Note:** KittenTTS pulls its own dependencies (numpy, soundfile, huggingface-hub, onnxruntime, spacy, torch, etc.) — do not pin them separately to avoid version conflicts.
 
 **`setup.bat`:**
-```batch
-@echo off
-echo 🐱 Setting up KittenTTS Studio...
-
-if not exist venv (
-    echo Creating virtual environment...
-    py -3.12 -m venv venv
-)
-
-call venv\Scripts\activate.bat
-
-echo Installing dependencies...
-pip install -r requirements.txt
-
-echo ✅ Setup complete! Run runner.bat to start.
-pause
-```
+- Tries system-wide `py -3.12` launcher first
+- Falls back to downloading Python 3.12.10 installer from python.org into local `python312/` subfolder
+- Skips Python setup entirely if venv already exists
+- Installs pip dependencies from requirements.txt
 
 **`runner.bat`:**
-```batch
-@echo off
-echo 🚀 Starting KittenTTS Studio...
-
-call venv\Scripts\activate.bat
-
-:: Find available port starting from 5000
-set PORT=5000
-:check_port
-netstat -an | find ":%PORT%" >nul
-if %ERRORLEVEL% equ 0 (
-    set /a PORT+=1
-    goto check_port
-)
-
-echo Found available port: %PORT%
-
-:: Start backend in background
-start "KittenTTS Backend" cmd /c "venv\Scripts\python.exe backend.py --port %PORT%"
-
-:: Wait for server to start
-timeout /t 3 /nobreak >nul
-
-:: Open browser
-start http://localhost:%PORT%
-
-echo 🎙️ KittenTTS Studio is running at http://localhost:%PORT%
-echo Press any key to stop...
-pause
-
-:: Cleanup
-taskkill /FI "WINDOWTITLE eq KittenTTS Backend*" /F >nul 2>&1
-```
+- Finds available port starting from 5000 (netstat check)
+- Starts backend with `cmd /k` (keeps window open on crash)
+- Health-check polling via `curl` to `/api/health` (up to 30 retries)
+- Opens browser only after server confirms healthy
+- Cleanup: taskkill on exit
 
 ---
 
-### 5. MODEL CONFIGURATION
+### 4. MODEL CONFIGURATION
 
 **Available Models:**
 
@@ -344,34 +273,51 @@ taskkill /FI "WINDOWTITLE eq KittenTTS Backend*" /F >nul 2>&1
 
 **Voices:** Bella, Jasper, Luna, Bruno, Rosie, Hugo, Kiki, Leo
 
-> **Note:** These voice names are aliases defined in each model's `config.json`. The underlying package voices are `expr-voice-{2-5}-{m,f}`. Voice availability may vary by model.
+> Voice names are aliases defined in each model's `config.json`. The underlying package voices are `expr-voice-{2-5}-{m,f}`. Voice availability may vary by model.
 
 ---
 
-### 6. ACCEPTANCE CRITERIA
+### 5. IMPLEMENTED FEATURES
 
-- [ ] `main.py` works exactly as original CLI tool
-- [ ] `backend.py` serves API and frontend on auto-detected port
-- [ ] Frontend is single `index.html` with inline Tailwind CSS (custom colors, no blue/indigo)
-- [ ] Mobile-first responsive (320px to 1440px+)
-- [ ] Model download shows real-time progress via SSE (3 files: config, onnx, voices)
-- [ ] Generation shows loader with token count estimation
-- [ ] Audio auto-plays on completion with native player
-- [ ] Files saved to `generated_assets/tts/` with `excerpt_timestamp` naming + JSON metadata
-- [ ] History panel lists all files, clickable to replay
-- [ ] `setup.bat` creates venv and installs dependencies
-- [ ] `runner.bat` auto-detects port, launches backend, opens browser
-- [ ] All interactive elements have hover/focus/active states
-- [ ] Layered shadows and intentional spacing throughout
+- [x] `main.py` works exactly as original CLI tool
+- [x] `backend.py` serves API and frontend on auto-detected port
+- [x] Frontend is single `index.html` with inline Tailwind CSS (custom dark colors, no blue/indigo)
+- [x] Mobile-first responsive (320px to 1440px+) with sidebar + bottom tab bar
+- [x] Model download shows real-time progress via SSE
+- [x] Generation shows 4-step processing stepper with token count estimation
+- [x] Audio auto-plays on completion with native player
+- [x] Files saved to `generated_assets/tts/<basename>/` with metadata JSON
+- [x] Unified library lists TTS + alignment history with filter tabs
+- [x] `setup.bat` creates venv and installs dependencies (auto-downloads Python 3.12)
+- [x] `runner.bat` auto-detects port, launches backend with health polling, opens browser
+- [x] All interactive elements have hover/focus/active states
+- [x] Layered shadows and intentional spacing throughout
+- [x] Dark theme (always-dark)
+- [x] Keyboard shortcut: Ctrl+Enter to generate
+- [x] Drag-and-drop (audio files on alignment, text on prompt)
+- [x] Karaoke word highlighting with click-to-seek
+- [x] Audio enhancement (LavaSR 24kHz -> 48kHz)
+- [x] Silence removal (Silero VAD) with configurable threshold
+- [x] Loudness normalization (ffmpeg loudnorm)
+- [x] MP3 conversion with live progress
+- [x] 3-version player (Original/Enhanced/Cleaned)
+- [x] Standalone force alignment page
+- [x] Breathing-block text chunking for long texts
+- [x] Async generation with abort support
+- [x] Per-generation subfolders
+- [x] Soft delete with TRASH folder and confirmation modal
+- [x] Text normalization (numbers, currency, abbreviations, dates)
+- [x] Speed control (0.5x-2.0x, persisted)
+- [x] Collapsible sidebar navigation (persisted)
+- [x] Retroactive processing (trigger alignment/enhancement/VAD on old files)
+- [x] Open generation folder in OS file explorer
+- [x] Copy prompt to clipboard
 
 ---
 
-### 7. BONUS FEATURES (Optional)
+### 6. UPCOMING / TODO
 
-- [ ] Dark mode toggle (persisted in localStorage)
-- [ ] Keyboard shortcut: Ctrl+Enter to generate
-- [ ] Drag-and-drop text file to populate prompt
+- [ ] Prosody (Expression) in Audio via Parselmouth -- pitch shift, pitch range, rate adjustment sliders
 - [ ] Audio waveform visualization during playback
-- [ ] Copy prompt to clipboard from history
-
----
+- [ ] Batch generation queue for automation pipelines
+- [ ] Favicon
