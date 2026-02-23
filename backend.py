@@ -485,7 +485,47 @@ def format_breathing_blocks(text: str, min_chars: int = 150, max_chars: int = 20
     blocks = tts_breathing_blocks(text, min_chars, max_chars)
     if not blocks:
         return text.strip()
+    if len(blocks) == 1:
+        return blocks[0]  # single block: return plain text, no brackets
     return "\n\n".join(f"[{b}]" for b in blocks)
+
+
+def _validate_brackets(text: str) -> str:
+    """Check bracket formatting quality.
+
+    Returns:
+        "none"         — no brackets at all
+        "well_formed"  — all brackets matched, not nested, no empty pairs
+        "malformed"    — anything else (unmatched, nested, empty, stray content)
+    """
+    if "[" not in text and "]" not in text:
+        return "none"
+    # Quick structural checks
+    if text.count("[") != text.count("]"):
+        return "malformed"
+    if "[[" in text or "]]" in text or "[]" in text:
+        return "malformed"
+    # Walk through: ensure no nesting and no significant content outside brackets
+    depth = 0
+    outside_chars = []
+    for ch in text:
+        if ch == "[":
+            depth += 1
+            if depth > 1:
+                return "malformed"
+        elif ch == "]":
+            depth -= 1
+            if depth < 0:
+                return "malformed"
+        elif depth == 0:
+            outside_chars.append(ch)
+    if depth != 0:
+        return "malformed"
+    # Check that content outside brackets is only whitespace
+    outside = "".join(outside_chars).strip()
+    if outside:
+        return "malformed"
+    return "well_formed"
 
 
 def pad_audio(audio, sample_rate=24000, pad_ms=50):
@@ -661,10 +701,24 @@ def normalize_text():
     text = data.get("text", "")
     if not text.strip():
         return jsonify({"error": "No text provided"}), 400
-    # Strip any existing bracket formatting before normalizing
-    stripped = re.sub(r'[\[\]]', '', text)
-    normalized = normalize_for_tts(stripped)
-    return jsonify({"original": text, "normalized": normalized})
+
+    validity = _validate_brackets(text)
+
+    if validity == "well_formed":
+        # Extract blocks, normalize each individually, re-wrap
+        blocks = re.findall(r'\[([^\[\]]+)\]', text)
+        normalized_blocks = [normalize_for_tts(b) for b in blocks if b.strip()]
+        if len(normalized_blocks) <= 1:
+            formatted = normalized_blocks[0] if normalized_blocks else text.strip()
+        else:
+            formatted = "\n\n".join(f"[{b}]" for b in normalized_blocks)
+    else:
+        # "none" or "malformed": strip all brackets, normalize, re-chunk
+        stripped = re.sub(r'[\[\]]', '', text)
+        normalized = normalize_for_tts(stripped)
+        formatted = format_breathing_blocks(normalized)
+
+    return jsonify({"original": text, "normalized": formatted})
 
 
 # --- Models ---
