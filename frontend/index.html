@@ -1487,7 +1487,7 @@
           <path d="M4 7h16M4 12h16M4 17h10" />
           <circle cx="19" cy="17" r="2" />
         </svg>
-        <span class="nav-label">F.Al</span>
+        <span class="nav-label">Timing</span>
       </button>
       <button class="nav-item" onclick="switchPage('library')" data-page="library">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -2534,8 +2534,9 @@
     function autoConvertMp3(wavFilename) {
       return new Promise((resolve, reject) => {
         const es = new EventSource(`/api/generation/${wavFilename}/mp3-convert`);
-        es.onmessage = (ev) => { const d = JSON.parse(ev.data); if (d.phase === 'done') { es.close(); resolve(); } else if (d.phase === 'error') { es.close(); reject(new Error(d.message || 'MP3 conversion failed')); } };
-        es.onerror = () => { es.close(); reject(new Error('MP3 conversion failed')); };
+        STATE.mp3EventSource = es;
+        es.onmessage = (ev) => { const d = JSON.parse(ev.data); if (d.phase === 'done') { es.close(); STATE.mp3EventSource = null; resolve(); } else if (d.phase === 'error') { es.close(); STATE.mp3EventSource = null; reject(new Error(d.message || 'MP3 conversion failed')); } };
+        es.onerror = () => { es.close(); STATE.mp3EventSource = null; reject(new Error('MP3 conversion failed')); };
       });
     }
     function updateCleanedMp3Btn() {
@@ -2583,10 +2584,13 @@
     function hidePlayer() {
       const np = $('#now-playing'); np.classList.remove('visible'); $('#player-spacer').style.display = 'none';
       setTimeout(() => { np.style.display = 'none'; }, 400);
+      audioEl.pause(); audioEl.src = '';
       if (STATE.alignmentPollTimer) { clearInterval(STATE.alignmentPollTimer); STATE.alignmentPollTimer = null; }
       if (STATE.enhancePollTimer) { clearInterval(STATE.enhancePollTimer); STATE.enhancePollTimer = null; }
       if (STATE.vadPollTimer) { clearInterval(STATE.vadPollTimer); STATE.vadPollTimer = null; }
+      if (STATE.mp3EventSource) { STATE.mp3EventSource.close(); STATE.mp3EventSource = null; }
       resetHistKaraoke(); STATE.alignment = null; STATE.activeWordIndex = -1;
+      STATE.nowPlaying = null;
       STATE.activeVersion = 'original'; updateVersionBtns(); updateCleanedMp3Btn();
     }
     function playHistoryItem(idx) {
@@ -2633,8 +2637,8 @@
       $('#icon-pause').classList.toggle('hidden', !p);
       setEqActive(p);
     }
-    audioEl.addEventListener('play', () => { updatePlayIcon(); _updateFsPlayIcon(); });
-    audioEl.addEventListener('pause', () => { updatePlayIcon(); _updateFsPlayIcon(); });
+    audioEl.addEventListener('play', () => { updatePlayIcon(); _updateFsPlayIcon(); if (STATE.alignment) _startKaraokeRAF(); });
+    audioEl.addEventListener('pause', () => { updatePlayIcon(); _updateFsPlayIcon(); _stopKaraokeRAF(); });
     audioEl.addEventListener('ended', () => { updatePlayIcon(); _updateFsPlayIcon(); $$('.hist-karaoke .karaoke-word').forEach(w => { w.classList.remove('active'); w.classList.add('spoken'); }); if (_fsOpen) $$('#fs-karaoke .fs-karaoke-word').forEach(w => { w.classList.remove('active'); w.classList.add('spoken'); }); STATE.activeWordIndex = -1; });
     audioEl.addEventListener('timeupdate', () => {
       if (!audioEl.duration) return;
@@ -2725,8 +2729,6 @@
       _karaokeRAF = requestAnimationFrame(tick);
     }
     function _stopKaraokeRAF() { if (_karaokeRAF) { cancelAnimationFrame(_karaokeRAF); _karaokeRAF = null; } }
-    audioEl.addEventListener('play', () => { if (STATE.alignment) _startKaraokeRAF(); });
-    audioEl.addEventListener('pause', _stopKaraokeRAF);
     function updateKaraokeHighlight(currentTime) {
       if (!STATE.alignment || !STATE.alignment.length) return;
       let activeIdx = -1, lo = 0, hi = STATE.alignment.length - 1;
@@ -2735,8 +2737,13 @@
       if (activeIdx === STATE.activeWordIndex) return; STATE.activeWordIndex = activeIdx;
       const histItem = _activeHistItem(); if (!histItem) return;
       const container = histItem.querySelector('.hist-karaoke'); if (!container || container.style.display === 'none') return;
-      const words = container.querySelectorAll('.karaoke-word'); if (!words.length) return;
-      words.forEach((el, i) => { if (activeIdx >= 0 && i < activeIdx) { el.classList.add('spoken'); el.classList.remove('active'); } else if (i === activeIdx) { el.classList.add('active'); el.classList.remove('spoken'); } else { el.classList.remove('active', 'spoken'); } });
+      const words = container.children; if (!words.length) return;
+      for (let i = 0; i < words.length; i++) {
+        const el = words[i];
+        if (activeIdx >= 0 && i < activeIdx) el.className = 'karaoke-word spoken';
+        else if (i === activeIdx) el.className = 'karaoke-word active';
+        else el.className = 'karaoke-word';
+      }
       if (activeIdx >= 0 && activeIdx < words.length) {
         const scrollParent = container.closest('.hist-text-expand');
         if (scrollParent) {
@@ -2754,8 +2761,6 @@
     // ---- Fullscreen Karaoke ----
     const fsOverlay = document.getElementById('fs-overlay');
     const fsSeekBar = document.getElementById('fs-seek');
-
-    let _fsTimer = null;
 
     function openFullscreen() {
       if (!STATE.alignment || !STATE.alignment.length || !STATE.nowPlaying) return;
@@ -2780,23 +2785,12 @@
       _updateFsSeek();
       _updateFsPlayIcon();
       updateFsKaraoke(audioEl.currentTime);
-      // Start polling loop — setInterval is immune to single errors killing the chain
-      if (_fsTimer) clearInterval(_fsTimer);
-      _fsTimer = setInterval(() => {
-        try {
-          if (!_fsOpen) { clearInterval(_fsTimer); _fsTimer = null; return; }
-          _updateFsPlayIcon();
-          if (!audioEl.paused && audioEl.duration) {
-            updateFsKaraoke(audioEl.currentTime);
-            _updateFsSeek();
-          }
-        } catch (e) { console.error('[fs-karaoke]', e); }
-      }, 33);
+      // Karaoke RAF tick + timeupdate already handle fs updates when _fsOpen is true
+      if (STATE.alignment && !audioEl.paused) _startKaraokeRAF();
     }
 
     function closeFullscreen() {
       _fsOpen = false;
-      if (_fsTimer) { clearInterval(_fsTimer); _fsTimer = null; }
       fsOverlay.classList.remove('visible');
       setTimeout(() => { fsOverlay.style.display = 'none'; }, 300);
     }
@@ -2942,6 +2936,7 @@
       document.querySelectorAll('#now-playing .ver-btn').forEach(b => { b.dataset.active = (b.dataset.ver === STATE.activeVersion) ? 'true' : 'false'; });
       if (_fsOpen) _syncFsVersions();
     }
+    let _verCanPlayHandler = null;
     function switchAudioVersion(ver) {
       const np = STATE.nowPlaying; if (!np) return;
       let src;
@@ -2953,13 +2948,18 @@
       // Show loading shimmer on the active button
       const activeBtn = document.querySelector(`.ver-btn[data-ver="${ver}"]`);
       if (activeBtn) activeBtn.classList.add('is-switching');
+      // Remove previous canplay handler if version was switched rapidly
+      if (_verCanPlayHandler) audioEl.removeEventListener('canplay', _verCanPlayHandler);
       audioEl.src = src; audioEl.currentTime = pos;
-      const _onCanPlay = () => {
-        audioEl.removeEventListener('canplay', _onCanPlay);
+      _verCanPlayHandler = () => {
+        audioEl.removeEventListener('canplay', _verCanPlayHandler);
+        _verCanPlayHandler = null;
         if (activeBtn) activeBtn.classList.remove('is-switching');
       };
-      audioEl.addEventListener('canplay', _onCanPlay);
+      audioEl.addEventListener('canplay', _verCanPlayHandler);
       if (wasPlaying) audioEl.play().catch(() => { });
+      // Reset fullscreen active index for new version
+      _fsActiveIdx = -1;
       // Re-fetch alignment for the new version
       if (STATE.alignmentAvailable) fetchAlignment(np.filename, ver);
     }

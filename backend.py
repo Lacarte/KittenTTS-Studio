@@ -851,7 +851,9 @@ def download_model(model_id):
 def _background_chunked_generate(job_id, model_id, voice, sentences, speed,
                                   max_silence_ms, prompt, basename):
     """Generate audio for each sentence chunk, concatenate, loudnorm, and save."""
-    q = generation_jobs[job_id]["queue"]
+    with generation_jobs_lock:
+        job = generation_jobs[job_id]
+    q = job["queue"]
     try:
         m = load_model(model_id)
         inner = m.model  # KittenTTS_1_Onnx instance
@@ -862,10 +864,10 @@ def _background_chunked_generate(job_id, model_id, voice, sentences, speed,
 
         for i, block in enumerate(sentences):
             # Check if abort was requested
-            if generation_jobs[job_id].get("abort"):
+            if job.get("abort"):
                 q.put({"phase": "aborted"})
                 with generation_jobs_lock:
-                    generation_jobs[job_id]["status"] = "aborted"
+                    job["status"] = "aborted"
                 return
 
             q.put({"phase": "generating", "chunk": i + 1, "total": total,
@@ -926,14 +928,11 @@ def _background_chunked_generate(job_id, model_id, voice, sentences, speed,
             "chunked": True,
             "num_chunks": total,
         }
-        json_path = os.path.join(job_dir, basename + ".json")
-        with open(json_path, "w") as f:
-            json.dump(metadata, f, indent=2)
-
-        # Set post-processing statuses and write to disk BEFORE starting threads
+        # Set post-processing statuses before writing to disk
         metadata["alignment_status"] = "pending" if _check_alignment_available() else "unavailable"
         metadata["enhance_status"] = "pending" if _check_enhance_available() else "unavailable"
         metadata["vad_status"] = "pending" if _check_vad_available() else "unavailable"
+        json_path = os.path.join(job_dir, basename + ".json")
         with open(json_path, "w") as f:
             json.dump(metadata, f, indent=2)
 
@@ -945,14 +944,14 @@ def _background_chunked_generate(job_id, model_id, voice, sentences, speed,
 
         q.put({"phase": "done", "metadata": metadata})
         with generation_jobs_lock:
-            generation_jobs[job_id]["status"] = "done"
-            generation_jobs[job_id]["metadata"] = metadata
+            job["status"] = "done"
+            job["metadata"] = metadata
 
     except Exception as e:
         logger.exception("Chunked generation failed")
         q.put({"phase": "error", "message": str(e)})
         with generation_jobs_lock:
-            generation_jobs[job_id]["status"] = "error"
+            job["status"] = "error"
 
 
 def _cleanup_old_jobs(max_age_s=300):
@@ -1037,6 +1036,7 @@ def generate():
         }), 202
 
     # --- Single block: synchronous fast path ---
+    _cleanup_old_jobs()
     # Wrap in brackets for TTS pacing
     single_block = blocks[0] if blocks else tts_prompt
     tts_input = f"[{single_block}]"
@@ -1123,7 +1123,8 @@ def generate_progress(job_id):
             except Exception:
                 # Queue read timed out — check if job finished while we were waiting
                 # (handles race where another SSE consumer drained the "done" event)
-                cur_status = job.get("status")
+                with generation_jobs_lock:
+                    cur_status = job.get("status")
                 if cur_status == "done":
                     yield f"data: {json.dumps({'phase': 'done', 'metadata': job.get('metadata')})}\n\n"
                     break
@@ -1150,9 +1151,9 @@ def generate_progress(job_id):
 def abort_generation(job_id):
     with generation_jobs_lock:
         job = generation_jobs.get(job_id)
-    if not job:
-        return jsonify({"error": "Unknown job ID"}), 404
-    job["abort"] = True
+        if not job:
+            return jsonify({"error": "Unknown job ID"}), 404
+        job["abort"] = True
     return jsonify({"status": "aborting"})
 
 
@@ -2200,29 +2201,39 @@ def convert_to_mp3(filename):
             text=True, bufsize=1,
         )
 
-        last_pct = 0
-        for line in proc.stdout:
-            line = line.strip()
-            if line.startswith("out_time_us="):
-                try:
-                    us = int(line.split("=", 1)[1])
-                    if total_duration > 0:
-                        pct = min(99, int((us / 1_000_000) / total_duration * 100))
-                        if pct > last_pct:
-                            last_pct = pct
-                            yield f"data: {json.dumps({'phase': 'converting', 'progress': pct})}\n\n"
-                except (ValueError, ZeroDivisionError):
-                    pass
-            elif line == "progress=end":
-                break
+        try:
+            last_pct = 0
+            for line in proc.stdout:
+                line = line.strip()
+                if line.startswith("out_time_us="):
+                    try:
+                        us = int(line.split("=", 1)[1])
+                        if total_duration > 0:
+                            pct = min(99, int((us / 1_000_000) / total_duration * 100))
+                            if pct > last_pct:
+                                last_pct = pct
+                                yield f"data: {json.dumps({'phase': 'converting', 'progress': pct})}\n\n"
+                    except (ValueError, ZeroDivisionError):
+                        pass
+                elif line == "progress=end":
+                    break
 
-        proc.wait(timeout=30)
+            proc.wait(timeout=30)
 
-        if proc.returncode == 0:
-            yield f"data: {json.dumps({'phase': 'done', 'progress': 100})}\n\n"
-        else:
-            err = proc.stderr.read()[:200] if proc.stderr else "Unknown error"
-            yield f"data: {json.dumps({'phase': 'error', 'message': err})}\n\n"
+            if proc.returncode == 0:
+                yield f"data: {json.dumps({'phase': 'done', 'progress': 100})}\n\n"
+            else:
+                err = proc.stderr.read()[:200] if proc.stderr else "Unknown error"
+                yield f"data: {json.dumps({'phase': 'error', 'message': err})}\n\n"
+        except GeneratorExit:
+            # Client disconnected — kill the subprocess
+            proc.kill()
+            proc.wait(timeout=5)
+        finally:
+            if proc.stdout:
+                proc.stdout.close()
+            if proc.stderr:
+                proc.stderr.close()
 
     return Response(
         stream(), mimetype="text/event-stream",
