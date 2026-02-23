@@ -397,6 +397,21 @@
 
     .gen-btn.step-done {
       background: linear-gradient(135deg, #4ECDC4 0%, #2FB8AE 100%) !important;
+      animation: step-done-flash 0.6s ease-out !important;
+    }
+
+    @keyframes step-done-flash {
+      0% {
+        box-shadow: 0 0 0 0 rgba(78, 205, 196, 0.5);
+      }
+
+      50% {
+        box-shadow: 0 0 30px 8px rgba(78, 205, 196, 0.4);
+      }
+
+      100% {
+        box-shadow: 0 4px 20px rgba(78, 205, 196, 0.3);
+      }
     }
 
     .abort-btn {
@@ -906,6 +921,47 @@
       animation: align-pulse 1.2s ease-in-out infinite;
     }
 
+    .ver-btn.is-switching {
+      pointer-events: none;
+      position: relative;
+    }
+
+    .ver-btn.is-switching::after {
+      content: '';
+      position: absolute;
+      inset: 2px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, transparent 0%, rgba(78, 205, 196, 0.15) 50%, transparent 100%);
+      background-size: 200% 100%;
+      animation: ver-shimmer 0.8s ease-in-out infinite;
+    }
+
+    @keyframes ver-shimmer {
+      0% {
+        background-position: 200% 0;
+      }
+
+      100% {
+        background-position: -200% 0;
+      }
+    }
+
+    #np-version-group.reveal-pop {
+      animation: ver-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes ver-pop {
+      0% {
+        opacity: 0;
+        transform: scale(0.85);
+      }
+
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
     /* ---- Now Playing ---- */
     #now-playing.visible {
       transform: translateY(0) !important;
@@ -1024,6 +1080,207 @@
       100% {
         transform: scale(1) translateY(0);
         opacity: 1;
+      }
+    }
+
+    /* ---- Fullscreen Karaoke ---- */
+    #fs-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 70;
+      background: rgba(6, 9, 14, 0.96);
+      backdrop-filter: blur(30px);
+      -webkit-backdrop-filter: blur(30px);
+      display: none;
+      flex-direction: column;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    #fs-overlay.visible {
+      opacity: 1;
+    }
+
+    #fs-overlay .fs-center {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 60px 32px 24px;
+      min-height: 0;
+    }
+
+    #fs-overlay .fs-track-info {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+      text-align: center;
+    }
+
+    #fs-karaoke {
+      flex: 1;
+      width: 100%;
+      overflow-y: auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 2px;
+      line-height: 2.2;
+      align-content: flex-start;
+      justify-content: center;
+      padding: 20px 0;
+      min-height: 0;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .fs-karaoke-word {
+      display: inline-block;
+      font-size: 22px;
+      font-weight: 500;
+      color: var(--text-muted);
+      padding: 2px 4px;
+      border-radius: 4px;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .fs-karaoke-word:hover {
+      color: var(--text);
+      background: rgba(78, 205, 196, 0.06);
+    }
+
+    .fs-karaoke-word.active {
+      color: var(--accent);
+      background: rgba(78, 205, 196, 0.14);
+      font-weight: 600;
+      border-bottom: 2px solid var(--accent);
+      padding-bottom: 0;
+    }
+
+    .fs-karaoke-word.spoken {
+      color: var(--text);
+    }
+
+    #fs-overlay .fs-controls {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding-top: 20px;
+      width: 100%;
+    }
+
+    #fs-overlay .fs-seek-wrap {
+      flex: 1;
+      position: relative;
+      height: 24px;
+      display: flex;
+      align-items: center;
+    }
+
+    #fs-overlay .fs-seek-wrap input[type="range"] {
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+      position: absolute;
+      z-index: 2;
+    }
+
+    #fs-overlay .fs-seek-track {
+      width: 100%;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      position: relative;
+    }
+
+    #fs-overlay .fs-seek-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), #2FB8AE);
+      border-radius: inherit;
+      transition: width 0.1s linear;
+    }
+
+    #fs-overlay .fs-time {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-muted);
+      min-width: 80px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    #fs-overlay .fs-close {
+      position: absolute;
+      top: 16px;
+      right: 20px;
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(22, 29, 42, 0.6);
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    #fs-overlay .fs-close:hover {
+      color: var(--text);
+      background: var(--bg-surface-hover);
+      border-color: var(--border-hover);
+    }
+
+    #fs-overlay .fs-hint {
+      font-size: 10px;
+      color: var(--text-muted);
+      opacity: 0.5;
+      text-align: center;
+      padding: 8px 0 16px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .fs-btn {
+      display: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.2s;
+    }
+
+    .fs-btn:hover {
+      background: rgba(78, 205, 196, 0.1);
+      color: var(--accent);
+    }
+
+    .fs-btn.show {
+      display: flex;
+    }
+
+    @media (max-width: 767px) {
+      .fs-karaoke-word {
+        font-size: 16px;
+      }
+
+      #fs-overlay .fs-center {
+        padding: 48px 16px 16px;
       }
     }
 
@@ -1230,7 +1487,7 @@
           <path d="M4 7h16M4 12h16M4 17h10" />
           <circle cx="19" cy="17" r="2" />
         </svg>
-        <span class="nav-label">F. Alignment</span>
+        <span class="nav-label">F.Al</span>
       </button>
       <button class="nav-item" onclick="switchPage('library')" data-page="library">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -1739,6 +1996,52 @@
 
   <audio id="audio-el" preload="auto"></audio>
 
+  <!-- ===== FULLSCREEN KARAOKE OVERLAY ===== -->
+  <div id="fs-overlay">
+    <button class="fs-close" onclick="closeFullscreen()" aria-label="Close fullscreen">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        viewBox="0 0 24 24">
+        <path d="M18 6L6 18M6 6l12 12" />
+      </svg>
+    </button>
+    <div class="fs-center">
+      <div class="fs-track-info">
+        <span id="fs-voice"></span> &middot; <span id="fs-model"></span> &middot; <span id="fs-prompt"
+          style="color:var(--text-secondary)"></span>
+      </div>
+      <div id="fs-karaoke"></div>
+      <div class="fs-controls">
+        <button id="fs-play-btn" onclick="togglePlayback()" aria-label="Play/Pause"
+          style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#4ECDC4,#2FB8AE);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:white;box-shadow:0 3px 12px rgba(78,205,196,0.3);flex-shrink:0">
+          <svg class="fs-icon-play" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"
+            style="margin-left:2px">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+          <svg class="fs-icon-pause hidden" width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M6 4h4v16H6zM14 4h4v16h-4z" />
+          </svg>
+        </button>
+        <div class="fs-seek-wrap">
+          <input type="range" id="fs-seek" min="0" max="100" value="0" step="0.1">
+          <div class="fs-seek-track">
+            <div id="fs-seek-fill" class="fs-seek-fill"></div>
+          </div>
+        </div>
+        <div class="fs-time"><span id="fs-time-current">0:00</span> / <span id="fs-time-total">0:00</span></div>
+      </div>
+      <div id="fs-version-group"
+        style="display:none;align-items:center;gap:2px;background:var(--bg-darkest);border-radius:7px;padding:2px;border:1px solid var(--border);margin-top:12px">
+        <button class="ver-btn" data-ver="original" onclick="switchAudioVersion('original')"
+          style="padding:4px 10px;border-radius:5px;font-size:10px;font-weight:600;font-family:'JetBrains Mono',monospace;border:none;cursor:pointer;transition:all 0.2s;background:transparent;color:var(--text-muted)">Original</button>
+        <button class="ver-btn" data-ver="enhanced" onclick="switchAudioVersion('enhanced')" disabled
+          style="padding:4px 10px;border-radius:5px;font-size:10px;font-weight:600;font-family:'JetBrains Mono',monospace;border:none;cursor:pointer;transition:all 0.2s;background:transparent;color:var(--text-muted)">Enhanced</button>
+        <button class="ver-btn" data-ver="cleaned" onclick="switchAudioVersion('cleaned')" disabled
+          style="padding:4px 10px;border-radius:5px;font-size:10px;font-weight:600;font-family:'JetBrains Mono',monospace;border:none;cursor:pointer;transition:all 0.2s;background:transparent;color:var(--text-muted)">Cleaned</button>
+      </div>
+    </div>
+    <div class="fs-hint">Esc to exit</div>
+  </div>
+
   <script>
     // ======================================================================
     // Page Navigation
@@ -2061,7 +2364,10 @@
     function showStepper() { $('#process-stepper').style.display = 'block'; }
     function hideStepper() { $('#process-stepper').style.display = 'none'; resetStepperStates(); }
     function resetStepperStates() {
-      document.querySelectorAll('.step-node').forEach(n => n.dataset.state = 'pending');
+      document.querySelectorAll('.step-node').forEach(n => {
+        n.dataset.state = 'pending';
+        n.querySelector('.step-dot').textContent = n.dataset.step;
+      });
       document.querySelectorAll('.step-line').forEach(l => { l.classList.remove('done', 'active'); });
       STATE.processingStep = 0;
     }
@@ -2088,20 +2394,27 @@
       else if (step === 5) { label.textContent = 'Converting MP3...'; btn.classList.add('step-mp3'); }
     }
     function setStepDone() {
-      document.querySelectorAll('.step-node').forEach(n => n.dataset.state = 'done');
+      document.querySelectorAll('.step-node').forEach(n => {
+        n.dataset.state = 'done';
+        n.querySelector('.step-dot').innerHTML = '<svg width="12" height="12" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>';
+      });
       document.querySelectorAll('.step-line').forEach(l => { l.classList.add('done'); l.classList.remove('active'); });
       const btn = $('#generate-btn');
       btn.classList.remove('step-enhance', 'step-vad', 'step-loudnorm', 'step-mp3');
       btn.classList.add('step-done');
-      $('#gen-label').textContent = 'Done!';
+      $('#gen-label').textContent = 'Complete';
       $('#gen-spinner').style.display = 'none';
+      // Pop-in the version group
+      const vg = $('#np-version-group');
+      if (vg && vg.style.display === 'flex') { vg.classList.add('reveal-pop'); setTimeout(() => vg.classList.remove('reveal-pop'), 500); }
       setTimeout(() => {
         btn.classList.remove('step-done');
         btn.disabled = false;
         $('#gen-label').textContent = 'Generate Audio';
         STATE.isGenerating = false;
         STATE.processingStep = 0;
-      }, 2000);
+        hideStepper();
+      }, 2500);
     }
     function setGenerating(on) {
       STATE.isGenerating = on;
@@ -2261,6 +2574,7 @@
     // ======================================================================
     const audioEl = $('#audio-el');
     const seekBar = $('#audio-seek');
+    let _fsOpen = false;
 
     function showPlayer() {
       const np = $('#now-playing'); np.style.display = 'block'; $('#player-spacer').style.display = 'block';
@@ -2319,17 +2633,18 @@
       $('#icon-pause').classList.toggle('hidden', !p);
       setEqActive(p);
     }
-    audioEl.addEventListener('play', updatePlayIcon);
-    audioEl.addEventListener('pause', updatePlayIcon);
-    audioEl.addEventListener('ended', () => { updatePlayIcon(); $$('.hist-karaoke .karaoke-word').forEach(w => { w.classList.remove('active'); w.classList.add('spoken'); }); STATE.activeWordIndex = -1; });
+    audioEl.addEventListener('play', () => { updatePlayIcon(); _updateFsPlayIcon(); });
+    audioEl.addEventListener('pause', () => { updatePlayIcon(); _updateFsPlayIcon(); });
+    audioEl.addEventListener('ended', () => { updatePlayIcon(); _updateFsPlayIcon(); $$('.hist-karaoke .karaoke-word').forEach(w => { w.classList.remove('active'); w.classList.add('spoken'); }); if (_fsOpen) $$('#fs-karaoke .fs-karaoke-word').forEach(w => { w.classList.remove('active'); w.classList.add('spoken'); }); STATE.activeWordIndex = -1; });
     audioEl.addEventListener('timeupdate', () => {
       if (!audioEl.duration) return;
       const pct = (audioEl.currentTime / audioEl.duration) * 100;
       seekBar.value = pct; $('#seek-fill').style.width = pct + '%';
       $('#time-current').textContent = fmtTime(audioEl.currentTime);
       $('#time-total').textContent = fmtTime(audioEl.duration);
+      _updateFsSeek(); updateFsKaraoke(audioEl.currentTime);
     });
-    seekBar.addEventListener('input', () => { if (audioEl.duration) { audioEl.currentTime = (seekBar.value / 100) * audioEl.duration; $('#seek-fill').style.width = seekBar.value + '%'; STATE.activeWordIndex = -1; } });
+    seekBar.addEventListener('input', () => { if (audioEl.duration) { audioEl.currentTime = (seekBar.value / 100) * audioEl.duration; $('#seek-fill').style.width = seekBar.value + '%'; STATE.activeWordIndex = -1; _updateFsSeek(); updateFsKaraoke(audioEl.currentTime); } });
     function fmtTime(s) { return Math.floor(s / 60) + ':' + Math.floor(s % 60).toString().padStart(2, '0'); }
 
     // ======================================================================
@@ -2358,6 +2673,8 @@
         const p = el.querySelector('.hist-text-plain'); const k = el.querySelector('.hist-karaoke');
         if (p) p.style.display = ''; if (k) { k.style.display = 'none'; k.innerHTML = ''; }
       });
+      $$('.fs-btn').forEach(b => b.classList.remove('show'));
+      if (_fsOpen) closeFullscreen();
       _stopKaraokeRAF();
     }
     function fetchAlignment(filename, version) {
@@ -2390,6 +2707,7 @@
       const hk = histItem.querySelector('.hist-karaoke');
       if (expand) expand.style.display = 'block'; if (plain) plain.style.display = 'none';
       if (hk) { hk.innerHTML = wordHTML; hk.style.display = 'flex'; }
+      _updateFsBtn();
     }
     function _updateAlignDot(filename, state) {
       const histItem = document.querySelector(`.hist-item[data-filename="${filename}"]`);
@@ -2403,7 +2721,7 @@
     let _karaokeRAF = null;
     function _startKaraokeRAF() {
       _stopKaraokeRAF();
-      function tick() { if (!STATE.alignment || audioEl.paused) { _karaokeRAF = null; return; } updateKaraokeHighlight(audioEl.currentTime); _karaokeRAF = requestAnimationFrame(tick); }
+      function tick() { if (!STATE.alignment || audioEl.paused) { _karaokeRAF = null; return; } updateKaraokeHighlight(audioEl.currentTime); if (_fsOpen) { updateFsKaraoke(audioEl.currentTime); _updateFsSeek(); } _karaokeRAF = requestAnimationFrame(tick); }
       _karaokeRAF = requestAnimationFrame(tick);
     }
     function _stopKaraokeRAF() { if (_karaokeRAF) { cancelAnimationFrame(_karaokeRAF); _karaokeRAF = null; } }
@@ -2419,13 +2737,158 @@
       const container = histItem.querySelector('.hist-karaoke'); if (!container || container.style.display === 'none') return;
       const words = container.querySelectorAll('.karaoke-word'); if (!words.length) return;
       words.forEach((el, i) => { if (activeIdx >= 0 && i < activeIdx) { el.classList.add('spoken'); el.classList.remove('active'); } else if (i === activeIdx) { el.classList.add('active'); el.classList.remove('spoken'); } else { el.classList.remove('active', 'spoken'); } });
-      if (activeIdx >= 0 && activeIdx < words.length) { words[activeIdx].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' }); }
+      if (activeIdx >= 0 && activeIdx < words.length) {
+        const scrollParent = container.closest('.hist-text-expand');
+        if (scrollParent) {
+          const wordTop = words[activeIdx].offsetTop - scrollParent.offsetTop;
+          const target = wordTop - scrollParent.clientHeight / 2 + words[activeIdx].offsetHeight / 2;
+          scrollParent.scrollTo({ top: target, behavior: 'smooth' });
+        }
+      }
     }
     function seekToWord(idx) {
       if (!STATE.alignment || idx < 0 || idx >= STATE.alignment.length) return;
       audioEl.currentTime = STATE.alignment[idx].begin;
       if (audioEl.paused) audioEl.play().catch(() => { }); STATE.activeWordIndex = -1; updateKaraokeHighlight(STATE.alignment[idx].begin);
     }
+    // ---- Fullscreen Karaoke ----
+    const fsOverlay = document.getElementById('fs-overlay');
+    const fsSeekBar = document.getElementById('fs-seek');
+
+    let _fsTimer = null;
+
+    function openFullscreen() {
+      if (!STATE.alignment || !STATE.alignment.length || !STATE.nowPlaying) return;
+      _fsOpen = true; _fsActiveIdx = -1;
+      const np = STATE.nowPlaying;
+      // Track info
+      document.getElementById('fs-voice').textContent = np.voice || np.source_file || '';
+      document.getElementById('fs-model').textContent = np.model_id || (np._isAlign ? 'alignment' : '');
+      const prompt = np.prompt || np.transcript || '';
+      document.getElementById('fs-prompt').textContent = prompt.length > 80 ? prompt.slice(0, 80) + '\u2026' : prompt;
+      // Build karaoke words
+      const container = document.getElementById('fs-karaoke');
+      container.innerHTML = STATE.alignment.map((w, i) =>
+        `<span class="fs-karaoke-word" data-idx="${i}" onclick="seekToWordFs(${i})">${w.word}</span>`
+      ).join('');
+      // Sync version selector
+      _syncFsVersions();
+      // Show overlay
+      fsOverlay.style.display = 'flex';
+      requestAnimationFrame(() => fsOverlay.classList.add('visible'));
+      // Initial sync
+      _updateFsSeek();
+      _updateFsPlayIcon();
+      updateFsKaraoke(audioEl.currentTime);
+      // Start polling loop — setInterval is immune to single errors killing the chain
+      if (_fsTimer) clearInterval(_fsTimer);
+      _fsTimer = setInterval(() => {
+        try {
+          if (!_fsOpen) { clearInterval(_fsTimer); _fsTimer = null; return; }
+          _updateFsPlayIcon();
+          if (!audioEl.paused && audioEl.duration) {
+            updateFsKaraoke(audioEl.currentTime);
+            _updateFsSeek();
+          }
+        } catch (e) { console.error('[fs-karaoke]', e); }
+      }, 33);
+    }
+
+    function closeFullscreen() {
+      _fsOpen = false;
+      if (_fsTimer) { clearInterval(_fsTimer); _fsTimer = null; }
+      fsOverlay.classList.remove('visible');
+      setTimeout(() => { fsOverlay.style.display = 'none'; }, 300);
+    }
+
+    function seekToWordFs(idx) {
+      if (!STATE.alignment || idx < 0 || idx >= STATE.alignment.length) return;
+      audioEl.currentTime = STATE.alignment[idx].begin;
+      if (audioEl.paused) audioEl.play().catch(() => { });
+      STATE.activeWordIndex = -1; _fsActiveIdx = -1;
+      updateFsKaraoke(STATE.alignment[idx].begin);
+      updateKaraokeHighlight(STATE.alignment[idx].begin);
+    }
+
+    let _fsActiveIdx = -1;
+    function updateFsKaraoke(currentTime) {
+      if (!_fsOpen || !STATE.alignment || !STATE.alignment.length) return;
+      const container = document.getElementById('fs-karaoke');
+      if (!container) return;
+      let activeIdx = -1, lo = 0, hi = STATE.alignment.length - 1;
+      while (lo <= hi) { const mid = (lo + hi) >> 1; const w = STATE.alignment[mid]; if (currentTime >= w.begin && currentTime < w.end) { activeIdx = mid; break; } else if (currentTime < w.begin) { hi = mid - 1; } else { lo = mid + 1; } }
+      if (activeIdx === -1 && lo > 0) { const prev = STATE.alignment[lo - 1]; const next = lo < STATE.alignment.length ? STATE.alignment[lo] : null; if (currentTime >= prev.end && (!next || currentTime < next.begin)) activeIdx = lo - 1; }
+      if (activeIdx === _fsActiveIdx) return;
+      _fsActiveIdx = activeIdx;
+      const words = container.children;
+      if (!words.length) return;
+      for (let i = 0; i < words.length; i++) {
+        const el = words[i];
+        if (activeIdx >= 0 && i < activeIdx) { el.className = 'fs-karaoke-word spoken'; }
+        else if (i === activeIdx) { el.className = 'fs-karaoke-word active'; }
+        else { el.className = 'fs-karaoke-word'; }
+      }
+      if (activeIdx >= 0 && activeIdx < words.length) {
+        const el = words[activeIdx];
+        const top = el.offsetTop - container.offsetTop;
+        container.scrollTo({ top: top - container.clientHeight / 2 + el.offsetHeight / 2, behavior: 'smooth' });
+      }
+    }
+
+    function _updateFsSeek() {
+      if (!_fsOpen || !audioEl.duration) return;
+      const pct = (audioEl.currentTime / audioEl.duration) * 100;
+      fsSeekBar.value = pct;
+      $('#fs-seek-fill').style.width = pct + '%';
+      $('#fs-time-current').textContent = fmtTime(audioEl.currentTime);
+      $('#fs-time-total').textContent = fmtTime(audioEl.duration);
+    }
+
+    function _updateFsPlayIcon() {
+      if (!_fsOpen) return;
+      const p = !audioEl.paused;
+      fsOverlay.querySelector('.fs-icon-play').classList.toggle('hidden', p);
+      fsOverlay.querySelector('.fs-icon-pause').classList.toggle('hidden', !p);
+    }
+
+    function _syncFsVersions() {
+      const np = STATE.nowPlaying; if (!np) return;
+      const grp = $('#fs-version-group');
+      const hasEnhanced = !!np._enhancedFilename; const hasCleaned = !!np._cleanedFilename;
+      if (!hasEnhanced && !hasCleaned) { grp.style.display = 'none'; return; }
+      grp.style.display = 'flex';
+      const btns = grp.querySelectorAll('.ver-btn');
+      btns.forEach(b => {
+        if (b.dataset.ver === 'enhanced') b.disabled = !hasEnhanced;
+        if (b.dataset.ver === 'cleaned') b.disabled = !hasCleaned;
+        b.dataset.active = (b.dataset.ver === STATE.activeVersion) ? 'true' : 'false';
+      });
+    }
+
+    // Fullscreen seek bar input
+    fsSeekBar.addEventListener('input', () => {
+      if (audioEl.duration) {
+        audioEl.currentTime = (fsSeekBar.value / 100) * audioEl.duration;
+        $('#fs-seek-fill').style.width = fsSeekBar.value + '%';
+        STATE.activeWordIndex = -1;
+      }
+    });
+
+    // Escape key to close
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && _fsOpen) { closeFullscreen(); e.preventDefault(); }
+    });
+
+    // Show/hide the fullscreen button on the active hist-item
+    function _updateFsBtn() {
+      $$('.fs-btn').forEach(b => b.classList.remove('show'));
+      if (!STATE.alignment || !STATE.alignment.length || !STATE.nowPlaying) return;
+      const histItem = _activeHistItem();
+      if (!histItem) return;
+      const btn = histItem.querySelector('.fs-btn');
+      if (btn) btn.classList.add('show');
+    }
+
     function triggerAlignment(filename) {
       if (!STATE.alignmentAvailable) { toast('Alignment not available', 'error'); return; }
       _updateAlignDot(filename, 'aligning'); fetchAlignment(filename);
@@ -2476,7 +2939,8 @@
       enhBtn.disabled = !hasEnhanced; clnBtn.disabled = !hasCleaned;
       if (hasEnhanced) enhBtn.classList.remove('is-loading');
       if (hasCleaned) clnBtn.classList.remove('is-loading');
-      document.querySelectorAll('.ver-btn').forEach(b => { b.dataset.active = (b.dataset.ver === STATE.activeVersion) ? 'true' : 'false'; });
+      document.querySelectorAll('#now-playing .ver-btn').forEach(b => { b.dataset.active = (b.dataset.ver === STATE.activeVersion) ? 'true' : 'false'; });
+      if (_fsOpen) _syncFsVersions();
     }
     function switchAudioVersion(ver) {
       const np = STATE.nowPlaying; if (!np) return;
@@ -2485,8 +2949,17 @@
       else if (ver === 'cleaned' && np._cleanedFilename) src = `/generation/${np.folder}/${np._cleanedFilename}`;
       else src = `/generation/${np.folder}/${np.filename}`;
       const wasPlaying = !audioEl.paused; const pos = audioEl.currentTime;
-      STATE.activeVersion = ver; audioEl.src = src; audioEl.currentTime = pos;
-      if (wasPlaying) audioEl.play().catch(() => { }); updateVersionBtns();
+      STATE.activeVersion = ver; updateVersionBtns();
+      // Show loading shimmer on the active button
+      const activeBtn = document.querySelector(`.ver-btn[data-ver="${ver}"]`);
+      if (activeBtn) activeBtn.classList.add('is-switching');
+      audioEl.src = src; audioEl.currentTime = pos;
+      const _onCanPlay = () => {
+        audioEl.removeEventListener('canplay', _onCanPlay);
+        if (activeBtn) activeBtn.classList.remove('is-switching');
+      };
+      audioEl.addEventListener('canplay', _onCanPlay);
+      if (wasPlaying) audioEl.play().catch(() => { });
       // Re-fetch alignment for the new version
       if (STATE.alignmentAvailable) fetchAlignment(np.filename, ver);
     }
@@ -2638,6 +3111,7 @@
         <button onclick="toggleHistText(this)" title="View full text" aria-label="View full text" class="hover-purple-icon" style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;flex-shrink:0">
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="8" y1="9" x2="10" y2="9"/></svg>
         </button>
+        <button class="fs-btn" onclick="openFullscreen()" title="Fullscreen karaoke" aria-label="Fullscreen"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg></button>
       </div>
       <div class="hist-text-expand" style="display:none;margin:0 14px 10px 56px;max-height:200px;overflow-y:auto;border-radius:6px;padding:10px 12px;">
         <p class="hist-text-plain" style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin:0;white-space:pre-wrap;word-break:break-word">${esc(displayText)}</p>
@@ -2671,6 +3145,7 @@
         <button onclick="copyHistPrompt(${i})" title="Load into prompt" aria-label="Copy to prompt" class="hover-accent-icon" style="width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;flex-shrink:0">
           <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
         </button>
+        <button class="fs-btn" onclick="openFullscreen()" title="Fullscreen karaoke" aria-label="Fullscreen"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg></button>
         ${STATE.alignmentAvailable ? `<span class="align-dot ${h.alignment_status || 'pending'}" title="${h.alignment_status === 'ready' ? 'Aligned' : h.alignment_status === 'aligning' ? 'Aligning…' : h.alignment_status === 'failed' ? 'Alignment failed' : 'Pending'}"></span>` : ''}
       </div>
       <div class="hist-text-expand" style="display:none;margin:0 14px 10px 56px;max-height:200px;overflow-y:auto;border-radius:6px;padding:10px 12px;">

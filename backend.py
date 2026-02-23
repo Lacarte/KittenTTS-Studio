@@ -1106,14 +1106,31 @@ def generate_progress(job_id):
         return jsonify({"error": "Unknown job ID"}), 404
 
     def stream():
+        # If job already finished (e.g. EventSource reconnect after completion),
+        # return the final status immediately instead of blocking on the queue.
+        status = job.get("status")
+        if status == "done":
+            yield f"data: {json.dumps({'phase': 'done', 'metadata': job.get('metadata')})}\n\n"
+            return
+        if status in ("error", "aborted"):
+            yield f"data: {json.dumps({'phase': status})}\n\n"
+            return
+
         q = job["queue"]
         while True:
             try:
-                event = q.get(timeout=120)
+                event = q.get(timeout=10)
             except Exception:
-                logger.warning("Generation SSE stream timed out for job {}", job_id)
-                yield f"data: {json.dumps({'phase': 'error', 'message': 'Timeout waiting for generation'})}\n\n"
-                break
+                # Queue read timed out — check if job finished while we were waiting
+                # (handles race where another SSE consumer drained the "done" event)
+                cur_status = job.get("status")
+                if cur_status == "done":
+                    yield f"data: {json.dumps({'phase': 'done', 'metadata': job.get('metadata')})}\n\n"
+                    break
+                if cur_status in ("error", "aborted"):
+                    yield f"data: {json.dumps({'phase': cur_status})}\n\n"
+                    break
+                continue  # Still running — keep waiting
             yield f"data: {json.dumps(event)}\n\n"
             if event.get("phase") in ("done", "error", "aborted"):
                 break
