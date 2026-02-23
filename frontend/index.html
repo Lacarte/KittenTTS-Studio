@@ -625,6 +625,10 @@
       border-radius: 8px;
       transition: all 0.2s;
     }
+    .hist-item.expanded {
+      background-color: #0d131d;
+      border: 1px solid #394a60;
+    }
 
     .hist-item::before {
       content: '';
@@ -2674,6 +2678,7 @@
     }
     function resetHistKaraoke() {
       $$('.hist-item').forEach(el => {
+        el.classList.remove('expanded');
         const p = el.querySelector('.hist-text-plain'); const k = el.querySelector('.hist-karaoke');
         if (p) p.style.display = ''; if (k) { k.style.display = 'none'; k.innerHTML = ''; }
       });
@@ -2711,6 +2716,7 @@
       const hk = histItem.querySelector('.hist-karaoke');
       if (expand) expand.style.display = 'block'; if (plain) plain.style.display = 'none';
       if (hk) { hk.innerHTML = wordHTML; hk.style.display = 'flex'; }
+      histItem.classList.add('expanded');
       _updateFsBtn();
     }
     function _updateAlignDot(filename, state) {
@@ -2904,6 +2910,7 @@
         const toggleBtn = histItem.querySelector('[onclick*="toggleHistText"]');
         if (expand && expand.style.display === 'none') {
           expand.style.display = 'block';
+          histItem.classList.add('expanded');
           if (toggleBtn) { toggleBtn.style.color = 'var(--accent)'; toggleBtn.style.background = 'rgba(78,205,196,0.06)'; }
         }
         // If alignment is available, show karaoke; otherwise show plain text
@@ -3164,9 +3171,11 @@
       renderHistory();
     }
     function toggleHistText(btn) {
-      const expand = btn.closest('.hist-item').querySelector('.hist-text-expand');
+      const item = btn.closest('.hist-item');
+      const expand = item.querySelector('.hist-text-expand');
       const visible = expand.style.display !== 'none';
       expand.style.display = visible ? 'none' : 'block';
+      item.classList.toggle('expanded', !visible);
       btn.style.color = visible ? 'var(--text-muted)' : 'var(--accent)';
       btn.style.background = visible ? 'transparent' : 'rgba(78,205,196,0.06)';
     }
