@@ -43,11 +43,14 @@ _LEVEL_ICONS = {
 
 def _console_format(record):
     icon = _LEVEL_ICONS.get(record["level"].name, "\u25cf")
-    return (
+    msg = (
         f"<dim>{record['time']:HH:mm:ss}</dim> "
         f"<level>{icon}</level> "
         f"<level>{record['message']}</level>\n"
     )
+    if record["exception"]:
+        msg += "{exception}"
+    return msg
 
 
 # Console: INFO and above, clean minimal format
@@ -159,11 +162,16 @@ def _tts_job_dir(basename):
 
 
 def _folder_for_file(filename):
-    """Derive the TTS job folder name from any variant filename (original, enhanced, cleaned)."""
+    """Derive the TTS job folder name from any variant filename (original, enhanced, cleaned).
+    Strips all known suffixes so e.g. 'foo_enhanced_cleaned.wav' → 'foo'."""
     base = filename.rsplit(".", 1)[0] if "." in filename else filename
-    for suffix in ("_cleaned", "_enhanced"):
-        if base.endswith(suffix):
-            return base[: -len(suffix)]
+    changed = True
+    while changed:
+        changed = False
+        for suffix in ("_cleaned", "_enhanced"):
+            if base.endswith(suffix):
+                base = base[: -len(suffix)]
+                changed = True
     return base
 
 
