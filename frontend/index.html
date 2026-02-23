@@ -2463,8 +2463,12 @@
     function toggleEnhance() { switchAudioVersion(STATE.activeVersion === 'enhanced' ? 'original' : 'enhanced'); }
 
     async function openAudioFolder() {
-      const filename = STATE.nowPlaying ? STATE.nowPlaying.filename : '';
-      try { await fetch('/api/open-generation-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) }); } catch (e) { toast('Could not open folder', 'error'); }
+      if (!STATE.nowPlaying) return;
+      const np = STATE.nowPlaying;
+      const body = np._isAlign
+        ? { type: 'force-alignment', folder: np.folder, filename: np.source_file }
+        : { filename: np.filename };
+      try { await fetch('/api/open-generation-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch (e) { toast('Could not open folder', 'error'); }
     }
 
     async function deleteNowPlaying() {

@@ -1311,12 +1311,20 @@ def delete_alignment(folder):
 def open_audio_folder():
     import sys
     data = request.get_json(silent=True) or {}
-    filename = data.get("filename", "")
-    filename = os.path.basename(filename) if filename else ""
-    basename = filename.rsplit(".", 1)[0] if filename else ""
-    job_dir = os.path.abspath(_tts_job_dir(basename)) if basename else ""
-    file_path = os.path.join(job_dir, filename) if job_dir and filename else ""
-    folder = os.path.abspath(AUDIO_DIR)
+    item_type = data.get("type", "")
+    if item_type == "force-alignment":
+        align_folder = os.path.basename(data.get("folder", ""))
+        align_file = os.path.basename(data.get("filename", ""))
+        job_dir = os.path.abspath(os.path.join(ALIGN_DIR, align_folder)) if align_folder else ""
+        file_path = os.path.join(job_dir, align_file) if job_dir and align_file else ""
+        folder = os.path.abspath(ALIGN_DIR)
+    else:
+        filename = data.get("filename", "")
+        filename = os.path.basename(filename) if filename else ""
+        basename = filename.rsplit(".", 1)[0] if filename else ""
+        job_dir = os.path.abspath(_tts_job_dir(basename)) if basename else ""
+        file_path = os.path.join(job_dir, filename) if job_dir and filename else ""
+        folder = os.path.abspath(AUDIO_DIR)
     try:
         if sys.platform == "win32":
             if file_path and os.path.exists(file_path):
