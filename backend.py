@@ -1435,22 +1435,22 @@ def get_alignment(filename):
 
     version = request.args.get("version", "original")
 
-    if version == "enhanced":
-        enh_status = metadata.get("enhanced_alignment_status")
-        if enh_status == "ready":
+    if version == "cleaned":
+        cl_status = metadata.get("cleaned_alignment_status")
+        if cl_status == "ready":
             return jsonify({
                 "status": "ready",
-                "word_alignment": metadata.get("enhanced_word_alignment", []),
+                "word_alignment": metadata.get("cleaned_word_alignment", []),
             })
-        if enh_status == "aligning":
+        if cl_status == "aligning":
             return jsonify({"status": "aligning"})
-        # Enhanced file may exist but alignment not started yet — trigger it
-        if metadata.get("enhanced_filename"):
+        # Cleaned file may exist but alignment not started yet — trigger it
+        if metadata.get("cleaned_filename"):
             _start_alignment(basename)
             return jsonify({"status": "aligning"})
-        # No enhanced file yet — fall through to original
         return jsonify({"status": "unavailable"})
 
+    # For original and enhanced, use the same word_alignment
     status = metadata.get("alignment_status")
 
     if status == "ready":
@@ -1711,32 +1711,32 @@ def _background_align(basename):
                 _update_metadata(basename, {"alignment_status": "failed"})
                 logger.warning("Alignment produced no results for {}", basename)
 
-        # --- Align enhanced WAV (if it exists) ---
-        # Re-read metadata: enhancement may have finished since we started
+        # --- Align cleaned WAV (if it exists) ---
+        # Re-read metadata: VAD may have finished since we started
         metadata = _read_metadata(basename)
-        enhanced_name = metadata.get("enhanced_filename")
-        if enhanced_name:
-            enhanced_path = os.path.join(job_dir, enhanced_name)
-            if os.path.exists(enhanced_path):
-                enh_hash = _audio_hash(enhanced_path)
-                need_enhanced = not (
-                    metadata.get("enhanced_alignment_status") == "ready"
-                    and metadata.get("enhanced_audio_hash") == enh_hash
-                    and metadata.get("enhanced_alignment_version") == ALIGNMENT_VERSION
-                    and metadata.get("enhanced_word_alignment")
+        cleaned_name = metadata.get("cleaned_filename")
+        if cleaned_name:
+            cleaned_path = os.path.join(job_dir, cleaned_name)
+            if os.path.exists(cleaned_path):
+                cleaned_hash = _audio_hash(cleaned_path)
+                need_cleaned = not (
+                    metadata.get("cleaned_alignment_status") == "ready"
+                    and metadata.get("cleaned_audio_hash") == cleaned_hash
+                    and metadata.get("cleaned_alignment_version") == ALIGNMENT_VERSION
+                    and metadata.get("cleaned_word_alignment")
                 )
-                if need_enhanced:
-                    _update_metadata(basename, {"enhanced_alignment_status": "aligning"})
-                    enh_alignment = _run_alignment(enhanced_path, prompt_text)
-                    if enh_alignment:
+                if need_cleaned:
+                    _update_metadata(basename, {"cleaned_alignment_status": "aligning"})
+                    cleaned_alignment = _run_alignment(cleaned_path, prompt_text)
+                    if cleaned_alignment:
                         _update_metadata(basename, {
-                            "enhanced_alignment_status": "ready",
-                            "enhanced_word_alignment": enh_alignment,
-                            "enhanced_audio_hash": enh_hash,
-                            "enhanced_alignment_version": ALIGNMENT_VERSION,
+                            "cleaned_alignment_status": "ready",
+                            "cleaned_word_alignment": cleaned_alignment,
+                            "cleaned_audio_hash": cleaned_hash,
+                            "cleaned_alignment_version": ALIGNMENT_VERSION,
                         })
                     else:
-                        _update_metadata(basename, {"enhanced_alignment_status": "failed"})
+                        _update_metadata(basename, {"cleaned_alignment_status": "failed"})
 
     except Exception as e:
         logger.exception("Background alignment failed for {}", basename)
@@ -2071,6 +2071,8 @@ def _background_vad(basename, max_silence_ms=500):
                 "cleaned_filename": cleaned_name,
             })
             logger.success("Cleaned  {} | VAD {:.2f}s | Loudnorm {:.2f}s", basename, vad_elapsed, loudnorm_elapsed)
+            # Chain: align the cleaned file for karaoke sync
+            _start_alignment(basename)
         else:
             _update_metadata(basename, {"vad_status": "failed"})
             logger.warning("Silence removal produced no output for {}", basename)

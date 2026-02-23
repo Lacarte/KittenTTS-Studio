@@ -2363,7 +2363,7 @@
     function fetchAlignment(filename, version) {
       if (STATE.alignmentPollTimer) { clearInterval(STATE.alignmentPollTimer); STATE.alignmentPollTimer = null; }
       const ver = version || STATE.activeVersion || 'original';
-      const vParam = ver !== 'original' && ver !== 'cleaned' ? `?version=${ver}` : '';
+      const vParam = ver === 'cleaned' ? '?version=cleaned' : '';
       let alignPollCount = 0;
       async function poll() {
         if (++alignPollCount > 200) { clearInterval(STATE.alignmentPollTimer); STATE.alignmentPollTimer = null; _updateAlignDot(filename, 'failed'); console.warn('[alignment] poll timeout after 200 attempts'); return; }
