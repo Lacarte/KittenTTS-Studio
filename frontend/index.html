@@ -2622,6 +2622,7 @@
           ? `<svg width="14" height="14" fill="none" stroke="${playBtnColor}" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24"><path d="M2 12h2l3-7 4 14 4-10 3 6h4"/></svg>`
           : `<svg width="12" height="12" fill="${playBtnColor}" viewBox="0 0 24 24" style="margin-left:1px"><path d="M8 5v14l11-7z"/></svg>`;
         if (isAlign) {
+          const alignTime = h.inference_time ? `${h.inference_time}s` : '';
           return `
     <div class="hist-item" data-folder="${esc(h.folder)}" data-type="align" style="animation:reveal 0.4s cubic-bezier(0.16,1,0.3,1) both;animation-delay:${vi * 0.04}s">
       <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;padding-left:14px">
@@ -2631,6 +2632,7 @@
         <button onclick="playHistoryItem(${i})" style="flex:1;min-width:0;background:none;border:none;cursor:pointer;text-align:left;font-family:inherit;padding:0">
           <p style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0">${esc(truncated)}</p>
           <p class="font-mono" style="font-size:10px;color:var(--text-muted);margin:2px 0 0">${tag} ${h.duration_seconds}s · ${h.word_count} words · ${timeAgo(h.timestamp)}</p>
+          ${alignTime ? `<p class="font-mono" style="font-size:9px;color:var(--text-muted);margin:2px 0 0;opacity:0.6">align ${alignTime}</p>` : ''}
         </button>
         <span class="font-mono" style="font-size:9px;color:var(--text-muted);flex-shrink:0;background:var(--bg-darkest);padding:2px 6px;border-radius:4px">${esc(h.source_file || '')}</span>
         <button onclick="toggleHistText(this)" title="View full text" aria-label="View full text" class="hover-purple-icon" style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;flex-shrink:0">
@@ -2643,6 +2645,14 @@
       </div>
     </div>`;
         }
+        // Build pipeline timing line
+        const steps = [];
+        if (h.inference_time) steps.push(`gen ${h.inference_time}s`);
+        if (h.enhance_time) steps.push(`enh ${h.enhance_time}s`);
+        if (h.vad_time) steps.push(`vad ${h.vad_time}s`);
+        if (h.loudnorm_time) steps.push(`norm ${h.loudnorm_time}s`);
+        if (h.alignment_time) steps.push(`align ${h.alignment_time}s`);
+        const timingLine = steps.length ? steps.join(' · ') + (h.rtf ? ` · RTF ${h.rtf}` : '') : '';
         return `
     <div class="hist-item" data-filename="${esc(h.filename)}" data-type="tts" style="animation:reveal 0.4s cubic-bezier(0.16,1,0.3,1) both;animation-delay:${vi * 0.04}s">
       <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;padding-left:14px">
@@ -2652,6 +2662,7 @@
         <button onclick="playHistoryItem(${i})" style="flex:1;min-width:0;background:none;border:none;cursor:pointer;text-align:left;font-family:inherit;padding:0">
           <p style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0">${esc(truncated)}</p>
           <p class="font-mono" style="font-size:10px;color:var(--text-muted);margin:2px 0 0">${tag} ${esc(h.voice)} · ${h.duration_seconds}s · ${timeAgo(h.timestamp)}${h.alignment_status === 'ready' && h.word_alignment ? ` · <span style="color:var(--accent)">${h.word_alignment.length} words aligned</span>` : h.alignment_status === 'aligning' ? ` · <span class="align-status-badge" data-align-started="${h.alignment_started_at || ''}">aligning…</span>` : h.alignment_status === 'failed' ? ` · <span class="align-status-badge failed" title="${esc(h.error_message || '')}">align failed</span>` : ''}</p>
+          ${timingLine ? `<p class="font-mono" style="font-size:9px;color:var(--text-muted);margin:2px 0 0;opacity:0.6">${timingLine}</p>` : ''}
         </button>
         <span class="font-mono" style="font-size:9px;color:var(--text-muted);flex-shrink:0;background:var(--bg-darkest);padding:2px 6px;border-radius:4px">${esc(h.model_id || '')}</span>
         <button onclick="toggleHistText(this)" title="View full text" aria-label="View full text" class="hover-accent-icon" style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:transparent;border:none;cursor:pointer;flex-shrink:0">

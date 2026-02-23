@@ -1695,15 +1695,18 @@ def _background_align(basename):
                 "alignment_status": "aligning",
                 "alignment_started_at": time.time(),
             })
+            align_start = time.perf_counter()
             alignment = _run_alignment(wav_path, prompt_text)
+            align_elapsed = round(time.perf_counter() - align_start, 3)
             if alignment:
                 _update_metadata(basename, {
                     "alignment_status": "ready",
+                    "alignment_time": align_elapsed,
                     "word_alignment": alignment,
                     "audio_hash": current_hash,
                     "alignment_version": ALIGNMENT_VERSION,
                 })
-                logger.success("Aligned  {} | {} words", basename, len(alignment))
+                logger.success("Aligned  {} | {} words | {:.2f}s", basename, len(alignment), align_elapsed)
             else:
                 _update_metadata(basename, {"alignment_status": "failed"})
                 logger.warning("Alignment produced no results for {}", basename)
@@ -1828,14 +1831,17 @@ def _background_enhance(basename):
 
         _update_metadata(basename, {"enhance_status": "enhancing"})
 
+        enh_start = time.perf_counter()
         enhanced_name = _run_enhance(wav_path)
+        enh_elapsed = round(time.perf_counter() - enh_start, 3)
 
         if enhanced_name:
             _update_metadata(basename, {
                 "enhance_status": "ready",
+                "enhance_time": enh_elapsed,
                 "enhanced_filename": enhanced_name,
             })
-            logger.success("Enhanced  {}", basename)
+            logger.success("Enhanced  {} | {:.2f}s", basename, enh_elapsed)
         else:
             _update_metadata(basename, {"enhance_status": "failed"})
             logger.warning("Enhancement produced no output for {}", basename)
@@ -2042,23 +2048,29 @@ def _background_vad(basename, max_silence_ms=500):
 
         _update_metadata(basename, {"vad_status": "cleaning"})
 
+        vad_start = time.perf_counter()
         cleaned_name = _run_silence_removal(wav_path, max_silence_ms=max_silence_ms)
 
         if cleaned_name:
+            vad_elapsed = round(time.perf_counter() - vad_start, 3)
             # Run loudnorm on the cleaned file
             _update_metadata(basename, {"vad_status": "normalizing"})
 
+            loudnorm_start = time.perf_counter()
             cleaned_path = os.path.join(job_dir, cleaned_name)
             if _run_loudnorm(cleaned_path):
                 logger.success("Normalized  {}", cleaned_name)
             else:
                 logger.warning("Loudnorm skipped for {} (ffmpeg unavailable or failed)", cleaned_name)
+            loudnorm_elapsed = round(time.perf_counter() - loudnorm_start, 3)
 
             _update_metadata(basename, {
                 "vad_status": "ready",
+                "vad_time": vad_elapsed,
+                "loudnorm_time": loudnorm_elapsed,
                 "cleaned_filename": cleaned_name,
             })
-            logger.success("Cleaned  {}", basename)
+            logger.success("Cleaned  {} | VAD {:.2f}s | Loudnorm {:.2f}s", basename, vad_elapsed, loudnorm_elapsed)
         else:
             _update_metadata(basename, {"vad_status": "failed"})
             logger.warning("Silence removal produced no output for {}", basename)
